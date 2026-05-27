@@ -1,0 +1,23 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+# macOS
+.DS_Store
+
+# Local dev files
+local.properties.new
+
+# Xcode user data
+**/xcuserdata/
+
+# Build output
+.hvigor/

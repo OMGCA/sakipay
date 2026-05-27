@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "窝囊计费 - 实时追踪每日收入"
+    },
+    {
+      "name": "MainAbility_desc",
+      "value": "窝囊计费 主页"
+    },
+    {
+      "name": "MainAbility_label",
+      "value": "窝囊计费"
+    }
+  ]
+}
