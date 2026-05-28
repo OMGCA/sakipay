@@ -26,6 +26,7 @@ export class SettingsViewModel {
   @Trace public taxRate: number = 0
   @Trace public payDay: number = 15
 
+  @Trace public breakVersion: number = 0
   @Trace public isLoaded: boolean = false
   @Trace public saveMessage: string = ''
 
@@ -144,6 +145,14 @@ export class SettingsViewModel {
     }
   }
 
+  /**
+   * Notify the VM that break segment properties have changed, so that computed
+   * properties like formattedWorkHours re-evaluate reactively.
+   */
+  public onBreakChanged(): void {
+    this.breakVersion++
+  }
+
   public get workStartMinutes(): number {
     return this.workStartH * 60 + this.workStartM
   }
@@ -153,6 +162,8 @@ export class SettingsViewModel {
   }
 
   public get formattedWorkHours(): string {
+    // Read breakVersion to establish reactive dependency on break property changes
+    const _v: number = this.breakVersion
     const ws: number = this.workStartMinutes
     const we: number = this.workEndMinutes
     if (we <= ws) {

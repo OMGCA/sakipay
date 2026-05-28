@@ -284,14 +284,14 @@ export struct SettingsPage {
 
       // Start time — horizontal, same as work time picker
       this.breakTimeRow('开始', seg.startHour, seg.startMinute,
-        (h: number) => { seg.startHour = h },
-        (m: number) => { seg.startMinute = m }
+        (h: number) => { seg.startHour = h; this.viewModel.onBreakChanged() },
+        (m: number) => { seg.startMinute = m; this.viewModel.onBreakChanged() }
       )
 
       // End time — horizontal, same as work time picker
       this.breakTimeRow('结束', seg.endHour, seg.endMinute,
-        (h: number) => { seg.endHour = h },
-        (m: number) => { seg.endMinute = m }
+        (h: number) => { seg.endHour = h; this.viewModel.onBreakChanged() },
+        (m: number) => { seg.endMinute = m; this.viewModel.onBreakChanged() }
       )
     }
     .width('100%')
