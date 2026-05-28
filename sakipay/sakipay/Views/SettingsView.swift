@@ -320,7 +320,7 @@ struct SettingsView: View {
     private var aboutSection: some View {
         Section("关于") {
             Button {
-                if let url = URL(string: "https://github.com/OMGCA/sakipay/blob/dev/0.0.2/privacy_policy/privacy_policy.md") {
+                if let url = URL(string: "https://github.com/OMGCA/sakipay/blob/dev/0.0.3/privacy_policy/privacy_policy.md") {
                     UIApplication.shared.open(url)
                 }
             } label: {
@@ -352,7 +352,7 @@ struct SettingsView: View {
             HStack {
                 Text("版本")
                 Spacer()
-                Text("0.0.2")
+                Text("0.0.3")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
