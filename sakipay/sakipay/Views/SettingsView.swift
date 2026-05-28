@@ -360,8 +360,6 @@ struct SettingsView: View {
                 Text("版本")
                 Spacer()
                 Text("0.0.3")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
     }
