@@ -30,16 +30,16 @@ struct WidgetCard {
         Row() {
           if (this.isPrivacyMode === '1') {
             SymbolGlyph($r('sys.symbol.eye_slash'))
-              .fontSize(10)
+              .fontSize(16)
               .fontColor([$r('app.color.accent_orange')])
           } else {
             SymbolGlyph($r('sys.symbol.eye'))
-              .fontSize(10)
+              .fontSize(16)
               .fontColor([$r('app.color.text_secondary')])
           }
         }
         .justifyContent(FlexAlign.Center)
-        .margin({ bottom: 2 })
+        .margin({ bottom: 6 })
         .onClick(() => {
           postCardAction(this, {
             action: 'message',
