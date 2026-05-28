@@ -14,29 +14,74 @@ struct WorkSchedule {
     let workEndMinutes: Int
     let breaks: [BreakSchedule]
 
+    /// True when the work day crosses midnight (e.g. 22:00–06:00).
+    var isCrossMidnight: Bool { workEndMinutes <= workStartMinutes }
+
+    /// Total clock minutes in the work window (before subtracting breaks).
+    var workWindowMinutes: Int {
+        isCrossMidnight ? (1440 - workStartMinutes) + workEndMinutes : workEndMinutes - workStartMinutes
+    }
+
     var totalBreakMinutes: Int { breaks.reduce(0) { $0 + $1.durationMinutes } }
-    var totalWorkMinutes: Int { (workEndMinutes - workStartMinutes) - totalBreakMinutes }
+    var totalWorkMinutes: Int { workWindowMinutes - totalBreakMinutes }
     var totalWorkHours: Double { Double(totalWorkMinutes) / 60.0 }
 
     /// All break schedules sorted by start time.
     var sortedBreaks: [BreakSchedule] { breaks.sorted { $0.startMinutes < $1.startMinutes } }
+
+    /// Converts a clock-minute value to minutes elapsed since work start,
+    /// handling the cross-midnight wrap.
+    func elapsedSinceStart(_ clockMinute: Int) -> Int {
+        if !isCrossMidnight {
+            return max(0, clockMinute - workStartMinutes)
+        }
+        if clockMinute >= workStartMinutes {
+            return clockMinute - workStartMinutes
+        }
+        return (1440 - workStartMinutes) + clockMinute
+    }
+
+    /// Converts a clock-second value to seconds elapsed since work start,
+    /// handling the cross-midnight wrap with second-level precision.
+    func elapsedSinceStartSeconds(_ clockSecond: Double) -> Double {
+        let wsSec = Double(workStartMinutes * 60)
+        if !isCrossMidnight {
+            return max(0, clockSecond - wsSec)
+        }
+        if clockSecond >= wsSec {
+            return clockSecond - wsSec
+        }
+        return Double(1440 * 60) - wsSec + clockSecond
+    }
+
+    /// True when clockMinute falls within the active work window.
+    func isInWorkWindow(_ clockMinute: Int) -> Bool {
+        if !isCrossMidnight {
+            return clockMinute >= workStartMinutes && clockMinute < workEndMinutes
+        }
+        return clockMinute >= workStartMinutes || clockMinute < workEndMinutes
+    }
+
+    /// True when clockMinute is after the work window has ended for the day.
+    func isAfterWork(_ clockMinute: Int) -> Bool {
+        if !isCrossMidnight {
+            return clockMinute >= workEndMinutes
+        }
+        return clockMinute >= workEndMinutes && clockMinute < workStartMinutes
+    }
 
     /// Returns the break that contains the given minute, if any.
     func breakContaining(_ minute: Int) -> BreakSchedule? {
         sortedBreaks.first { minute >= $0.startMinutes && minute < $0.endMinutes }
     }
 
-    /// Total break minutes that have fully elapsed before the given minute.
-    func elapsedBreakMinutes(before minute: Int) -> Int {
-        sortedBreaks
-            .filter { $0.endMinutes <= minute }
-            .reduce(0) { $0 + $1.durationMinutes }
-    }
-
-    /// Total break seconds that have elapsed before the given second (exclusive of the break end).
-    func elapsedBreakSeconds(before second: Double) -> Double {
-        sortedBreaks
-            .filter { Double($0.endMinutes * 60) < second }
+    /// Total break seconds that have elapsed before the given clock second,
+    /// handling cross-midnight wrap by comparing in elapsed-since-start space.
+    func elapsedBreakSeconds(before clockSecond: Double) -> Double {
+        let beforeMinute = Int(clockSecond / 60)
+        let beforeElapsed = elapsedSinceStart(beforeMinute)
+        return sortedBreaks
+            .filter { elapsedSinceStart($0.endMinutes) <= beforeElapsed }
             .reduce(0.0) { $0 + Double($1.durationMinutes * 60) }
     }
 }
@@ -88,8 +133,15 @@ struct BreakSegment: Codable, Hashable, Identifiable {
 
     var isValid: Bool { endMinutes > startMinutes }
 
+    /// Checks whether this break fits entirely within the work window.
+    /// When workEnd <= workStart (cross-midnight), the break must fit in either
+    /// the [workStart, 1440) or [0, workEnd] segment.
     func fitsWithin(workStart: Int, workEnd: Int) -> Bool {
-        startMinutes >= workStart && endMinutes <= workEnd
+        if workEnd > workStart {
+            return startMinutes >= workStart && endMinutes <= workEnd
+        }
+        return (startMinutes >= workStart && endMinutes <= 1440) ||
+               (startMinutes >= 0 && endMinutes <= workEnd)
     }
 }
 
@@ -140,32 +192,33 @@ final class EarningsCalculator {
                               + calendar.component(.minute, from: date) * 60
                               + calendar.component(.second, from: date))
 
-        let wsSec = Double(schedule.workStartMinutes * 60)
-        let weSec = Double(schedule.workEndMinutes * 60)
-
-        if currentMinute < schedule.workStartMinutes {
+        // Not started: before work start (and not in cross-midnight's next-day portion)
+        if !schedule.isInWorkWindow(currentMinute) && !schedule.isAfterWork(currentMinute) {
             return TodayEarnings(amount: 0, progress: 0, status: .notStarted,
                                  elapsedSeconds: 0, totalWorkSeconds: totalWorkSeconds)
         }
 
-        if currentMinute >= schedule.workEndMinutes {
+        // Completed: after work end
+        if schedule.isAfterWork(currentMinute) {
             return TodayEarnings(amount: dailyRate, progress: 1, status: .completed,
                                  elapsedSeconds: totalWorkSeconds, totalWorkSeconds: totalWorkSeconds)
         }
 
-        // Check if we're inside a break (minute precision ok for boundary check)
+        // Check if we're inside a break
         if let activeBreak = schedule.breakContaining(currentMinute) {
             let breakStartSec = Double(activeBreak.startMinutes * 60)
-            let previousBreakSec = schedule.elapsedBreakSeconds(before: breakStartSec)
-            let elapsedSec = max(0, breakStartSec - wsSec - previousBreakSec)
+            let breakStartElapsedSec = schedule.elapsedSinceStartSeconds(breakStartSec)
+            let priorBreakSec = schedule.elapsedBreakSeconds(before: breakStartSec)
+            let elapsedSec = max(0, breakStartElapsedSec - priorBreakSec)
             let progress = totalWorkSeconds > 0 ? elapsedSec / totalWorkSeconds : 0
             return TodayEarnings(amount: secondRate * elapsedSec, progress: progress,
                                  status: .onBreak, elapsedSeconds: elapsedSec, totalWorkSeconds: totalWorkSeconds)
         }
 
         // Working — use second-level precision
+        let nowElapsedSec = schedule.elapsedSinceStartSeconds(currentSec)
         let elapsedBreakSec = schedule.elapsedBreakSeconds(before: currentSec)
-        let elapsedSec = max(0, currentSec - wsSec - elapsedBreakSec)
+        let elapsedSec = max(0, nowElapsedSec - elapsedBreakSec)
         let progress = totalWorkSeconds > 0 ? elapsedSec / totalWorkSeconds : 0
         return TodayEarnings(amount: secondRate * elapsedSec, progress: progress,
                              status: .working, elapsedSeconds: elapsedSec, totalWorkSeconds: totalWorkSeconds)

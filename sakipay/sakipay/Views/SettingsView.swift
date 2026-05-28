@@ -214,10 +214,17 @@ struct SettingsView: View {
             Button {
                 let ws = workMinutes(workStartH, workStartM)
                 let we = workMinutes(workEndH, workEndM)
-                guard we > ws + 120 else { return }  // Need at least 2h gap
+                let duration = workDurationMinutes(ws, we)
+                guard duration >= 120 else { return }  // Need at least 2h gap
                 let lastEnd = breakSegments.last?.endMinutes ?? ws
-                let newStart = min(lastEnd + 60, we - 60)
-                let newEnd = min(newStart + 60, we)
+                var newStart = lastEnd + 60
+                let isCross = we <= ws
+                if isCross && newStart >= 1440 { newStart -= 1440 }
+                let maxStart = isCross ? 1440 : we
+                newStart = min(newStart, maxStart - 60)
+                var newEnd = newStart + 60
+                if isCross && newEnd > 1440 { newEnd -= 1440 }
+                newEnd = min(newEnd, isCross ? 1440 : we)
                 breakSegments.append(BreakSegment(
                     startHour: newStart / 60, startMinute: (newStart % 60) / 5 * 5,
                     endHour: newEnd / 60, endMinute: (newEnd % 60) / 5 * 5
@@ -363,14 +370,21 @@ struct SettingsView: View {
 
     private func workMinutes(_ h: Int, _ m: Int) -> Int { h * 60 + m }
 
+    /// Total work-window minutes, handling cross-midnight (end <= start means next day).
+    private func workDurationMinutes(_ ws: Int, _ we: Int) -> Int {
+        if we > ws { return we - ws }
+        return (1440 - ws) + we
+    }
+
     private var formattedWorkHours: String {
         let ws = workMinutes(workStartH, workStartM)
         let we = workMinutes(workEndH, workEndM)
-        guard we > ws else { return "0.0 小时" }
+        let duration = workDurationMinutes(ws, we)
+        guard duration > 0 else { return "0.0 小时" }
         let breakMin = breakSegments
             .filter(\.isValid)
             .reduce(0) { $0 + ($1.endMinutes - $1.startMinutes) }
-        let workMin = max(0, (we - ws) - breakMin)
+        let workMin = max(0, duration - breakMin)
         let hours = Double(workMin) / 60.0
         return String(format: "%.1f 小时", hours)
     }
@@ -379,7 +393,7 @@ struct SettingsView: View {
         let ws = workMinutes(workStartH, workStartM)
         let we = workMinutes(workEndH, workEndM)
 
-        guard we > ws else { return }
+        guard workDurationMinutes(ws, we) > 0 else { return }
 
         let before = breakSegments.count
         let filtered = breakSegments.filter { $0.fitsWithin(workStart: ws, workEnd: we) }
@@ -387,7 +401,6 @@ struct SettingsView: View {
 
         guard removed > 0 else { return }
 
-        // Delay mutation to avoid modifying the array while SwiftUI is reading it
         DispatchQueue.main.async {
             self.breakSegments = filtered
             self.prunedCount = removed
@@ -413,6 +426,10 @@ struct SettingsView: View {
     private func saveConfig() {
         let pay = Double(monthlyPayText) ?? 0
         guard pay > 0 else { return }
+
+        let duration = workDurationMinutes(workMinutes(workStartH, workStartM),
+                                           workMinutes(workEndH, workEndM))
+        guard duration <= 1439 else { return }
 
         // Snapshot breakSegments to avoid mutation conflicts
         let validBreaks = breakSegments.filter(\.isValid)

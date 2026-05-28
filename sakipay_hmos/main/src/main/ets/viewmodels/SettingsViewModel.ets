@@ -74,6 +74,12 @@ export class SettingsViewModel {
       return false
     }
 
+    const duration: number = this.getWorkDurationMinutes()
+    if (duration > 1439) {
+      this.showSaveMessage('总工作时长不能超过 23 小时 59 分')
+      return false
+    }
+
     // Prune breaks that are invalid or outside work hours
     const ws: number = this.workStartH * 60 + this.workStartM
     const we: number = this.workEndH * 60 + this.workEndM
@@ -109,15 +115,43 @@ export class SettingsViewModel {
     return true
   }
 
+  /**
+   * Total work-window minutes, handling cross-midnight (end <= start means next day).
+   */
+  public getWorkDurationMinutes(): number {
+    const ws: number = this.workStartH * 60 + this.workStartM
+    const we: number = this.workEndH * 60 + this.workEndM
+    if (we > ws) {
+      return we - ws
+    }
+    return (1440 - ws) + we
+  }
+
   public addBreak(): void {
     const ws: number = this.workStartH * 60 + this.workStartM
     const we: number = this.workEndH * 60 + this.workEndM
+    const duration: number = this.getWorkDurationMinutes()
+    if (duration < 120) {
+      return
+    }
 
     const lastEnd: number = this.breakSegments.length > 0
       ? this.breakSegments[this.breakSegments.length - 1].endMinutes
       : ws
-    const newStart: number = Math.min(lastEnd + 60, we - 60)
-    const newEnd: number = Math.min(newStart + 60, we)
+    let newStart: number = lastEnd + 60
+
+    // For cross-midnight, wrap if we go past midnight
+    if (we <= ws && newStart >= 1440) {
+      newStart = newStart - 1440
+    }
+    // Clamp to the work window
+    const maxStart: number = we <= ws ? 1440 : we
+    newStart = Math.min(newStart, maxStart - 60)
+    let newEnd: number = newStart + 60
+    if (we <= ws && newEnd > 1440) {
+      newEnd = newEnd - 1440
+    }
+    newEnd = Math.min(newEnd, we <= ws ? 1440 : we)
 
     const seg: BreakSegment = new BreakSegment()
     seg.startHour = Math.floor(newStart / 60)
@@ -134,7 +168,7 @@ export class SettingsViewModel {
   public pruneInvalidBreaks(): void {
     const ws: number = this.workStartH * 60 + this.workStartM
     const we: number = this.workEndH * 60 + this.workEndM
-    if (we <= ws) {
+    if (this.getWorkDurationMinutes() <= 0) {
       return
     }
     const before: number = this.breakSegments.length
@@ -164,15 +198,14 @@ export class SettingsViewModel {
   public get formattedWorkHours(): string {
     // Read breakVersion to establish reactive dependency on break property changes
     const _v: number = this.breakVersion
-    const ws: number = this.workStartMinutes
-    const we: number = this.workEndMinutes
-    if (we <= ws) {
+    const duration: number = this.getWorkDurationMinutes()
+    if (duration <= 0) {
       return '0.0 小时'
     }
     const breakMin: number = this.breakSegments
       .filter((b: BreakSegment) => b.isValid)
       .reduce((sum: number, b: BreakSegment) => sum + b.durationMinutes, 0)
-    const workMin: number = Math.max(0, (we - ws) - breakMin)
+    const workMin: number = Math.max(0, duration - breakMin)
     return `${(workMin / 60).toFixed(1)} 小时`
   }
 

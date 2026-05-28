@@ -29,8 +29,17 @@ export class BreakSegment {
     return this.endMinutes > this.startMinutes
   }
 
+  /**
+   * Checks whether this break fits entirely within the work window.
+   * When workEnd <= workStart (cross-midnight), the break must fit in either
+   * the [workStart, 1440) or [0, workEnd] segment.
+   */
   public fitsWithin(workStart: number, workEnd: number): boolean {
-    return this.startMinutes >= workStart && this.endMinutes <= workEnd
+    if (workEnd > workStart) {
+      return this.startMinutes >= workStart && this.endMinutes <= workEnd
+    }
+    return (this.startMinutes >= workStart && this.endMinutes <= 1440) ||
+      (this.startMinutes >= 0 && this.endMinutes <= workEnd)
   }
 
   private generateId(): string {

@@ -9,11 +9,25 @@ export class BreakScheduleEntry {
 
 /**
  * Internal schedule representation used by the calculator.
+ * Supports cross-midnight schedules where workEndMinutes <= workStartMinutes
+ * (e.g. 22:00–06:00 night shift).
  */
 class WorkSchedule {
   public workStartMinutes: number = 540 // 09:00
   public workEndMinutes: number = 1080  // 18:00
   public breaks: BreakScheduleEntry[] = []
+
+  /** True when the work day crosses midnight (e.g. 22:00–06:00). */
+  public get isCrossMidnight(): boolean {
+    return this.workEndMinutes <= this.workStartMinutes
+  }
+
+  /** Total clock minutes in the work window (before subtracting breaks). */
+  public get workWindowMinutes(): number {
+    const ws: number = this.workStartMinutes
+    const we: number = this.workEndMinutes
+    return this.isCrossMidnight ? (1440 - ws) + we : we - ws
+  }
 
   public get totalBreakMinutes(): number {
     let total: number = 0
@@ -24,30 +38,93 @@ class WorkSchedule {
   }
 
   public get totalWorkMinutes(): number {
-    return (this.workEndMinutes - this.workStartMinutes) - this.totalBreakMinutes
+    return this.workWindowMinutes - this.totalBreakMinutes
   }
 
   public get totalWorkHours(): number {
     return this.totalWorkMinutes / 60
   }
 
+  /**
+   * Converts a clock-minute value to minutes elapsed since work start,
+   * handling the cross-midnight wrap. Clamped to 0 for minutes before work start.
+   */
+  public elapsedSinceStart(clockMinute: number): number {
+    if (!this.isCrossMidnight) {
+      return Math.max(0, clockMinute - this.workStartMinutes)
+    }
+    if (clockMinute >= this.workStartMinutes) {
+      return clockMinute - this.workStartMinutes
+    }
+    return (1440 - this.workStartMinutes) + clockMinute
+  }
+
+  /**
+   * Converts a clock-second value to seconds elapsed since work start,
+   * handling the cross-midnight wrap with second-level precision.
+   */
+  public elapsedSinceStartSeconds(clockSecond: number): number {
+    const wsSec: number = this.workStartMinutes * 60
+    if (!this.isCrossMidnight) {
+      return Math.max(0, clockSecond - wsSec)
+    }
+    if (clockSecond >= wsSec) {
+      return clockSecond - wsSec
+    }
+    return (1440 * 60 - wsSec) + clockSecond
+  }
+
+  /**
+   * True when clockMinute falls within the active work window.
+   */
+  public isInWorkWindow(clockMinute: number): boolean {
+    if (!this.isCrossMidnight) {
+      return clockMinute >= this.workStartMinutes && clockMinute < this.workEndMinutes
+    }
+    return clockMinute >= this.workStartMinutes || clockMinute < this.workEndMinutes
+  }
+
+  /**
+   * True when clockMinute is after the work window has ended for the day.
+   */
+  public isAfterWork(clockMinute: number): boolean {
+    if (!this.isCrossMidnight) {
+      return clockMinute >= this.workEndMinutes
+    }
+    return clockMinute >= this.workEndMinutes && clockMinute < this.workStartMinutes
+  }
+
   public breakContaining(minute: number): BreakScheduleEntry | null {
     const sorted: BreakScheduleEntry[] = [...this.breaks].sort(
       (a: BreakScheduleEntry, b: BreakScheduleEntry) => a.startMinutes - b.startMinutes
     )
+    if (!this.isCrossMidnight) {
+      const found: BreakScheduleEntry | undefined = sorted.find(
+        (b: BreakScheduleEntry) => minute >= b.startMinutes && minute < b.endMinutes
+      )
+      return found !== undefined ? found : null
+    }
+    // Cross-midnight: check both [ws, 1440) and [0, we] segments
     const found: BreakScheduleEntry | undefined = sorted.find(
       (b: BreakScheduleEntry) => minute >= b.startMinutes && minute < b.endMinutes
     )
     return found !== undefined ? found : null
   }
 
-  public elapsedBreakSeconds(beforeSecond: number): number {
+  /**
+   * Returns total break seconds that have elapsed before the given clock second,
+   * handling cross-midnight wrap.
+   */
+  public elapsedBreakSeconds(beforeClockSecond: number): number {
     const sorted: BreakScheduleEntry[] = [...this.breaks].sort(
       (a: BreakScheduleEntry, b: BreakScheduleEntry) => a.startMinutes - b.startMinutes
     )
+    const beforeMinute: number = Math.floor(beforeClockSecond / 60)
     let total: number = 0
     for (const b of sorted) {
-      if (b.endMinutes * 60 < beforeSecond) {
+      const bEndElapsed: number = this.elapsedSinceStart(b.endMinutes)
+      const beforeElapsed: number = this.elapsedSinceStart(beforeMinute)
+      if (bEndElapsed <= beforeElapsed) {
         total += (b.endMinutes - b.startMinutes) * 60
       }
     }
@@ -137,15 +214,14 @@ export class EarningsCalculator {
     const currentMinute: number = date.getHours() * 60 + date.getMinutes()
     const currentSec: number = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
 
-    const wsSec: number = this.schedule.workStartMinutes * 60
-    const weSec: number = this.schedule.workEndMinutes * 60
-
-    if (currentMinute < this.schedule.workStartMinutes) {
+    // Not started: before work start (and not in cross-midnight's next-day portion)
+    if (!this.schedule.isInWorkWindow(currentMinute) && !this.schedule.isAfterWork(currentMinute)) {
       result.status = WorkStatus.NOT_STARTED
       return result
     }
 
-    if (currentMinute >= this.schedule.workEndMinutes) {
+    // Completed: after work end
+    if (this.schedule.isAfterWork(currentMinute)) {
       result.amount = this.dailyRate
       result.progress = 1
       result.status = WorkStatus.COMPLETED
@@ -153,19 +229,24 @@ export class EarningsCalculator {
       return result
     }
 
+    // In work window
     const activeBreak = this.schedule.breakContaining(currentMinute)
     if (activeBreak !== null) {
+      // On break: work elapsed = time from work start to break start, minus prior breaks
       const breakStartSec: number = activeBreak.startMinutes * 60
-      const previousBreakSec: number = this.schedule.elapsedBreakSeconds(breakStartSec)
-      result.elapsedSeconds = Math.max(0, breakStartSec - wsSec - previousBreakSec)
+      const breakStartElapsedSec: number = this.schedule.elapsedSinceStartSeconds(breakStartSec)
+      const priorBreakSec: number = this.schedule.elapsedBreakSeconds(breakStartSec)
+      result.elapsedSeconds = Math.max(0, breakStartElapsedSec - priorBreakSec)
       result.amount = this.secondRate * result.elapsedSeconds
       result.progress = result.totalWorkSeconds > 0 ? result.elapsedSeconds / result.totalWorkSeconds : 0
       result.status = WorkStatus.ON_BREAK
       return result
     }
 
+    // Working: work elapsed = time from work start to now, minus all completed breaks
+    const nowElapsedSec: number = this.schedule.elapsedSinceStartSeconds(currentSec)
     const elapsedBreakSec: number = this.schedule.elapsedBreakSeconds(currentSec)
-    result.elapsedSeconds = Math.max(0, currentSec - wsSec - elapsedBreakSec)
+    result.elapsedSeconds = Math.max(0, nowElapsedSec - elapsedBreakSec)
     result.amount = this.secondRate * result.elapsedSeconds
     result.progress = result.totalWorkSeconds > 0 ? result.elapsedSeconds / result.totalWorkSeconds : 0
     result.status = WorkStatus.WORKING
