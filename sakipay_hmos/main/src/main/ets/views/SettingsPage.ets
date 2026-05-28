@@ -440,7 +440,7 @@ export struct SettingsPage {
       Row() {
         Text('版本').fontSize(14)
         Blank()
-        Text('0.0.2').fontSize(12).fontColor($r('app.color.text_secondary'))
+        Text('0.0.3').fontSize(12).fontColor($r('app.color.text_secondary'))
       }
       .width('100%')
     }
