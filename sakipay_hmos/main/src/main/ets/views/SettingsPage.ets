@@ -421,7 +421,7 @@ export struct SettingsPage {
         IconFontView({ code: IconFont.CHEVRON_RIGHT, iconSize: 14, iconColor: $r('app.color.accent_blue') })
       }
       .width('100%')
-      .onClick(() => { this.openURL('https://github.com/OMGCA/sakipay/blob/dev/0.0.2/privacy_policy/privacy_policy.md') })
+      .onClick(() => { this.openURL('https://github.com/OMGCA/sakipay/blob/develop/privacy_policy/privacy_policy.md') })
 
       Divider().strokeWidth(0.5).color($r('app.color.progress_track'))
 
