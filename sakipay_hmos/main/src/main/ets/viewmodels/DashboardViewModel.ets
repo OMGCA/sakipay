@@ -110,6 +110,8 @@ export class DashboardViewModel {
         return '休息中'
       case WorkStatus.COMPLETED:
         return '下班啦！'
+      case WorkStatus.OVERTIME:
+        return '加班攒钱中 💪'
       case WorkStatus.DAY_OFF:
         return '休息日'
       default:

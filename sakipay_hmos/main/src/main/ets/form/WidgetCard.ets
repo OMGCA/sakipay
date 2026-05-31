@@ -47,7 +47,10 @@ struct WidgetCard {
           })
         })
 
-        if (this.isPrivacyMode === '1') {
+        if (this.cardStatus === 'dayOff') {
+          Text('🏖️')
+            .fontSize(18)
+        } else if (this.isPrivacyMode === '1') {
           Text('***')
             .fontSize(15)
             .fontWeight(600)
@@ -103,6 +106,8 @@ struct WidgetCard {
     if (this.cardStatus === 'working') { return $r('app.color.status_working') }
     if (this.cardStatus === 'onBreak') { return $r('app.color.status_break') }
     if (this.cardStatus === 'completed') { return $r('app.color.status_completed') }
+    if (this.cardStatus === 'overtime') { return $r('app.color.status_overtime') }
+    if (this.cardStatus === 'dayOff') { return $r('app.color.status_dayoff') }
     return $r('app.color.status_inactive')
   }
 
@@ -111,6 +116,7 @@ struct WidgetCard {
     if (this.cardStatus === 'working') { return '窝囊费积累中' }
     if (this.cardStatus === 'onBreak') { return '休息中' }
     if (this.cardStatus === 'completed') { return '下班啦！' }
+    if (this.cardStatus === 'overtime') { return '加班中 💪' }
     return '休息日'
   }
 }

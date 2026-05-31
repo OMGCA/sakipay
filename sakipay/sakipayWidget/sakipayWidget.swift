@@ -109,7 +109,7 @@ struct EarningsProvider: TimelineProvider {
 
         let interval: Int
         switch status {
-        case .working, .onBreak:
+        case .working, .onBreak, .overtime:
             interval = 5
         case .notStarted:
             interval = 15
@@ -176,7 +176,10 @@ struct sakipayWidgetEntryView: View {
                 }
                 .buttonStyle(.plain)
 
-                if entry.isPrivacyMode {
+                if entry.status == .dayOff {
+                    Text("🏖️")
+                        .font(.system(size: 22))
+                } else if entry.isPrivacyMode {
                     Text("***")
                         .font(.system(size: 18, weight: .semibold, design: .monospaced))
                 } else {
@@ -213,7 +216,8 @@ struct sakipayWidgetEntryView: View {
         case .working: .green
         case .onBreak: .orange
         case .completed: .blue
-        case .dayOff: .gray
+        case .overtime: Color(red: 0.78, green: 0.35, blue: 0.35)
+        case .dayOff: Color(red: 0.35, green: 0.73, blue: 0.67)
         }
     }
 
@@ -223,6 +227,7 @@ struct sakipayWidgetEntryView: View {
         case .working: "窝囊费积累中"
         case .onBreak: "休息中"
         case .completed: "下班啦！"
+        case .overtime: "加班中 💪"
         case .dayOff: "休息日"
         }
     }

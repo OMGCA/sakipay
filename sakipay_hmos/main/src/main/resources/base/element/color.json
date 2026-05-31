@@ -57,6 +57,14 @@
       "value": "#8E8E93"
     },
     {
+      "name": "status_overtime",
+      "value": "#C76B6B"
+    },
+    {
+      "name": "status_dayoff",
+      "value": "#5AB8AD"
+    },
+    {
       "name": "card_border",
       "value": "#E5E5EA"
     },

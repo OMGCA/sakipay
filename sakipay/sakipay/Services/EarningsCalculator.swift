@@ -91,6 +91,7 @@ enum WorkStatus {
     case working
     case onBreak
     case completed
+    case overtime
     case dayOff
 }
 
@@ -213,7 +214,8 @@ final class EarningsCalculator {
         // Completed: after work end
         if schedule.isAfterWork(currentMinute) {
             let fullAmount = isOvertime ? secondRate * effectiveTotalSeconds * multiplier : dailyRate
-            return TodayEarnings(amount: fullAmount, progress: 1, status: .completed,
+            let status: WorkStatus = isOvertime ? .overtime : .completed
+            return TodayEarnings(amount: fullAmount, progress: 1, status: status,
                                  elapsedSeconds: effectiveTotalSeconds, totalWorkSeconds: effectiveTotalSeconds)
         }
 
@@ -238,8 +240,9 @@ final class EarningsCalculator {
         let cappedElapsed = min(elapsedSec, effectiveTotalSeconds)
         let progress = effectiveTotalSeconds > 0 ? cappedElapsed / effectiveTotalSeconds : 0
         let amount = secondRate * cappedElapsed * multiplier
+        let status: WorkStatus = isOvertime ? .overtime : .working
         return TodayEarnings(amount: amount, progress: progress,
-                             status: .working, elapsedSeconds: cappedElapsed,
+                             status: status, elapsedSeconds: cappedElapsed,
                              totalWorkSeconds: effectiveTotalSeconds)
     }
 

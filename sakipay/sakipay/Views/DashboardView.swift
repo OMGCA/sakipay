@@ -73,9 +73,9 @@ struct DashboardView: View {
         .background(vm.statusColor.opacity(0.1))
         .clipShape(Capsule())
         .animation(.easeInOut(duration: 1).repeatForever(), value: statusDotPulse)
-        .onAppear { statusDotPulse = vm.todayStatus == .working }
+        .onAppear { statusDotPulse = vm.todayStatus == .working || vm.todayStatus == .overtime }
         .onChange(of: vm.todayStatus) { _, new in
-            statusDotPulse = new == .working
+            statusDotPulse = new == .working || new == .overtime
         }
     }
 
@@ -83,7 +83,10 @@ struct DashboardView: View {
 
     private var earningsCounter: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            if vm.isPrivacyMode {
+            if vm.todayStatus == .dayOff {
+                Text("🏖️")
+                    .font(.system(size: 48))
+            } else if vm.isPrivacyMode {
                 Text("***")
                     .font(.system(size: 48, weight: .bold, design: .monospaced))
             } else {

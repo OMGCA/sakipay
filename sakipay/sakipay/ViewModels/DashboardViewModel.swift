@@ -82,6 +82,7 @@ final class DashboardViewModel: ObservableObject {
         case .working: "窝囊费积累中"
         case .onBreak: "休息中"
         case .completed: "下班啦！"
+        case .overtime: "加班攒钱中 💪"
         case .dayOff: "休息日"
         }
     }
@@ -92,7 +93,8 @@ final class DashboardViewModel: ObservableObject {
         case .working: .green
         case .onBreak: .orange
         case .completed: .blue
-        case .dayOff: .gray
+        case .overtime: Color(red: 0.78, green: 0.35, blue: 0.35)
+        case .dayOff: Color(red: 0.35, green: 0.73, blue: 0.67)
         }
     }
 

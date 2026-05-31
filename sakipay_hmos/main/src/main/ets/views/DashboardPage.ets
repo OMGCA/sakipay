@@ -166,7 +166,10 @@ export struct DashboardPage {
   @Builder
   private earningsCounter(): void {
     Row() {
-      if (this.viewModel.isPrivacyMode) {
+      if (this.viewModel.todayStatus === WorkStatus.DAY_OFF) {
+        Text('🏖️')
+          .fontSize(36)
+      } else if (this.viewModel.isPrivacyMode) {
         Text('***')
           .fontSize(36)
           .fontWeight(FontWeight.Bold)
@@ -376,7 +379,8 @@ export struct DashboardPage {
 
   @Monitor('viewModel.todayStatus')
   public onStatusChanged(): void {
-    if (this.viewModel.todayStatus === WorkStatus.WORKING) {
+    if (this.viewModel.todayStatus === WorkStatus.WORKING ||
+        this.viewModel.todayStatus === WorkStatus.OVERTIME) {
       this.startPulse()
     } else {
       this.stopPulse()
@@ -450,6 +454,10 @@ export struct DashboardPage {
         return $r('app.color.status_break')
       case WorkStatus.COMPLETED:
         return $r('app.color.status_completed')
+      case WorkStatus.OVERTIME:
+        return $r('app.color.status_overtime')
+      case WorkStatus.DAY_OFF:
+        return $r('app.color.status_dayoff')
       default:
         return $r('app.color.status_inactive')
     }

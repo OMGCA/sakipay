@@ -142,6 +142,7 @@ export enum WorkStatus {
   WORKING = 'working',
   ON_BREAK = 'onBreak',
   COMPLETED = 'completed',
+  OVERTIME = 'overtime',
   DAY_OFF = 'dayOff'
 }
 
@@ -238,7 +239,7 @@ export class EarningsCalculator {
       const fullAmount: number = isOvertime ? this.secondRate * effectiveTotalSeconds * multiplier : this.dailyRate
       result.amount = fullAmount
       result.progress = 1
-      result.status = WorkStatus.COMPLETED
+      result.status = isOvertime ? WorkStatus.OVERTIME : WorkStatus.COMPLETED
       result.elapsedSeconds = effectiveTotalSeconds
       return result
     }
@@ -267,7 +268,7 @@ export class EarningsCalculator {
     result.elapsedSeconds = elapsedSec
     result.amount = this.secondRate * elapsedSec * multiplier
     result.progress = effectiveTotalSeconds > 0 ? elapsedSec / effectiveTotalSeconds : 0
-    result.status = WorkStatus.WORKING
+    result.status = isOvertime ? WorkStatus.OVERTIME : WorkStatus.WORKING
     return result
   }
 
