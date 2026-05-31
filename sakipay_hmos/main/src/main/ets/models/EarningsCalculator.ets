@@ -143,6 +143,7 @@ export enum WorkStatus {
   ON_BREAK = 'onBreak',
   COMPLETED = 'completed',
   OVERTIME = 'overtime',
+  VOLUNTARY_OVERTIME = 'voluntaryOvertime',
   DAY_OFF = 'dayOff'
 }
 
@@ -207,7 +208,14 @@ export class EarningsCalculator {
     return Math.max(0, this.schedule.totalWorkMinutes) * 60
   }
 
-  public calculateTodayEarnings(date: Date = new Date()): TodayEarnings {
+  /**
+   * @param voluntaryOvertimeTotalSeconds Pre-computed total OT seconds for the current session
+   *   (accumulated from prior sessions today + elapsed in current session). When > 0, the
+   *   calculator returns VOLUNTARY_OVERTIME with earnings at the normal secondRate.
+   *   Pass 0 when no voluntary OT session is active.
+   */
+  public calculateTodayEarnings(date: Date = new Date(),
+                                 voluntaryOvertimeTotalSeconds: number = 0): TodayEarnings {
     const result = new TodayEarnings()
     result.totalWorkSeconds = this.totalWorkSeconds
 
@@ -254,6 +262,18 @@ export class EarningsCalculator {
 
     // Completed: after work end
     if (this.schedule.isAfterWork(currentMinute)) {
+      // Voluntary overtime: only on normal workdays (not pre-planned overtime),
+      // triggered by user after work hours. Session duration is tracked externally
+      // and passed in as voluntaryOvertimeTotalSeconds.
+      if (voluntaryOvertimeTotalSeconds > 0 && !isOvertime) {
+        const overtimeAmount: number = voluntaryOvertimeTotalSeconds * this.secondRate
+        result.amount = overtimeAmount
+        result.progress = 1
+        result.status = WorkStatus.VOLUNTARY_OVERTIME
+        result.elapsedSeconds = effectiveTotalSeconds
+        return result
+      }
+
       const fullAmount: number = isOvertime
         ? effectiveSecondRate * effectiveTotalSeconds * multiplier
         : this.dailyRate

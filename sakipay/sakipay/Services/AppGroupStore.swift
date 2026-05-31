@@ -10,6 +10,10 @@ final class AppGroupStore {
         case breaksJSON
         case dayOverridesJSON
         case isPrivacyMode
+        case voluntaryOTActive
+        case voluntaryOTAccumulated
+        case voluntaryOTDate
+        case voluntaryOTSessionStart
     }
 
     private let defaults: UserDefaults?
@@ -88,5 +92,88 @@ final class AppGroupStore {
             defaults?.set(newValue, forKey: Key.isPrivacyMode.rawValue)
             defaults?.synchronize()
         }
+    }
+
+    // MARK: - Voluntary Overtime Session State
+
+    /// Whether a voluntary OT session is currently active.
+    var voluntaryOTActive: Bool {
+        get { defaults?.bool(forKey: Key.voluntaryOTActive.rawValue) ?? false }
+        set {
+            defaults?.set(newValue, forKey: Key.voluntaryOTActive.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
+    /// Total OT seconds accumulated from completed sessions today (excludes the current session).
+    var voluntaryOTAccumulated: Double {
+        get { defaults?.double(forKey: Key.voluntaryOTAccumulated.rawValue) ?? 0 }
+        set {
+            defaults?.set(newValue, forKey: Key.voluntaryOTAccumulated.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
+    /// The date string ("YYYY-MM-DD") for which the accumulated value is valid.
+    /// Reset accumulated to 0 when this doesn't match today.
+    var voluntaryOTDate: String {
+        get { defaults?.string(forKey: Key.voluntaryOTDate.rawValue) ?? "" }
+        set {
+            defaults?.set(newValue, forKey: Key.voluntaryOTDate.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
+    /// Unix timestamp (seconds since 1970) of when the current session started. 0 when inactive.
+    var voluntaryOTSessionStart: Double {
+        get { defaults?.double(forKey: Key.voluntaryOTSessionStart.rawValue) ?? 0 }
+        set {
+            defaults?.set(newValue, forKey: Key.voluntaryOTSessionStart.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
+    /// Computes the total voluntary OT seconds for the current moment.
+    /// Returns 0 if no session is active or if the stored date doesn't match today.
+    func voluntaryOvertimeTotalSeconds(now: Date = Date(), calendar: Calendar = .current) -> Double {
+        guard voluntaryOTActive else { return 0 }
+
+        let today = dateString(from: now, calendar: calendar)
+        if voluntaryOTDate != today {
+            // Stale state from a previous day — reset
+            voluntaryOTActive = false
+            voluntaryOTAccumulated = 0
+            voluntaryOTDate = ""
+            voluntaryOTSessionStart = 0
+            return 0
+        }
+
+        let sessionElapsed = max(0, now.timeIntervalSince1970 - voluntaryOTSessionStart)
+        return voluntaryOTAccumulated + sessionElapsed
+    }
+
+    /// Ends the current voluntary OT session, adding its elapsed time to the accumulated total.
+    func endVoluntaryOTSession(now: Date = Date(), calendar: Calendar = .current) {
+        guard voluntaryOTActive else { return }
+        let sessionElapsed = max(0, now.timeIntervalSince1970 - voluntaryOTSessionStart)
+        voluntaryOTAccumulated += sessionElapsed
+        voluntaryOTActive = false
+        voluntaryOTSessionStart = 0
+    }
+
+    /// Starts a new voluntary OT session. Resets accumulated if the stored date is stale.
+    func startVoluntaryOTSession(now: Date = Date(), calendar: Calendar = .current) {
+        let today = dateString(from: now, calendar: calendar)
+        if voluntaryOTDate != today {
+            voluntaryOTAccumulated = 0
+            voluntaryOTDate = today
+        }
+        voluntaryOTActive = true
+        voluntaryOTSessionStart = now.timeIntervalSince1970
+    }
+
+    private func dateString(from date: Date, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 }

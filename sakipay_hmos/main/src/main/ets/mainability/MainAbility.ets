@@ -76,6 +76,9 @@ export default class MainAbility extends UIAbility {
       let status: string = 'notStarted'
       const currency: string = config.currency
 
+      const isVoluntaryOT: boolean = await store.loadVoluntaryOTActive()
+      const totalOTSeconds: number = await store.voluntaryOvertimeTotalSeconds()
+
       if (config.monthlyPay > 0) {
         const calc: EarningsCalculator = new EarningsCalculator()
         calc.monthlyPay = config.monthlyPay
@@ -85,7 +88,7 @@ export default class MainAbility extends UIAbility {
         calc.schedule.workStartMinutes = config.workStartHour * 60 + config.workStartMinute
         calc.schedule.workEndMinutes = config.workEndHour * 60 + config.workEndMinute
         calc.schedule.breaks = this.parseBreaksForWidget(config.breaksJSON)
-        const today = calc.calculateTodayEarnings()
+        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
         amount = today.amount.toFixed(2)
         progress = today.progress
         status = today.status as string
@@ -98,7 +101,8 @@ export default class MainAbility extends UIAbility {
         'cardProgress': progress,
         'cardStatus': status,
         'cardCurrency': currency,
-        'cardPrivacy': isPrivacy ? '1' : '0'
+        'cardPrivacy': isPrivacy ? '1' : '0',
+        'cardVoluntaryOT': isVoluntaryOT ? '1' : '0'
       }
       const fbData: formBindingData.FormBindingData = formBindingData.createFormBindingData(data)
       for (const f of runningForms) {

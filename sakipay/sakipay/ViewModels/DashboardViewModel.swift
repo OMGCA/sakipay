@@ -16,14 +16,17 @@ final class DashboardViewModel: ObservableObject {
     @Published var currency = "¥"
     @Published var isConfigured = false
     @Published var isPrivacyMode = false
+    @Published var isVoluntaryOvertimeActive = false
 
     private var calculator: EarningsCalculator?
     private var timer: Timer?
     private let store = AppGroupStore()
     private var lastConfiguredAt: Date?
+    private var previousStatus: WorkStatus = .notStarted
 
     init() {
         isPrivacyMode = store.isPrivacyMode
+        isVoluntaryOvertimeActive = store.voluntaryOTActive
     }
 
     func configure(with config: EarningsConfig) {
@@ -49,7 +52,19 @@ final class DashboardViewModel: ObservableObject {
 
     func refresh() {
         guard let calc = calculator else { return }
-        let today = calc.calculateTodayEarnings()
+        // Re-read from store so widget toggles are picked up on next refresh
+        isVoluntaryOvertimeActive = store.voluntaryOTActive
+        let totalOTSeconds = store.voluntaryOvertimeTotalSeconds()
+        let today = calc.calculateTodayEarnings(voluntaryOvertimeTotalSeconds: totalOTSeconds)
+
+        // Reset voluntary OT accumulation when a new work day begins
+        // (transition from notStarted to working)
+        if today.status == .working && previousStatus == .notStarted {
+            store.voluntaryOTAccumulated = 0
+            store.voluntaryOTDate = ""
+        }
+        previousStatus = today.status
+
         withAnimation(.easeInOut(duration: 0.3)) {
             todayAmount = today.amount
             todayProgress = today.progress
@@ -61,6 +76,19 @@ final class DashboardViewModel: ObservableObject {
     func togglePrivacy() {
         isPrivacyMode.toggle()
         store.isPrivacyMode = isPrivacyMode
+    }
+
+    /// Toggles voluntary overtime on/off. When starting, begins a new session counting from now.
+    /// When ending, accumulates the current session's elapsed time. Sessions accumulate across
+    /// toggles within the same day and reset on the next working day.
+    func toggleVoluntaryOvertime() {
+        if isVoluntaryOvertimeActive {
+            store.endVoluntaryOTSession()
+        } else {
+            store.startVoluntaryOTSession()
+        }
+        isVoluntaryOvertimeActive = store.voluntaryOTActive
+        refresh()
     }
 
     private func startTimer() {
@@ -83,6 +111,7 @@ final class DashboardViewModel: ObservableObject {
         case .onBreak: "休息中"
         case .completed: "下班啦！"
         case .overtime: "加班攒钱中 💪"
+        case .voluntaryOvertime: "自愿加班中 😤"
         case .dayOff: "休息日"
         }
     }
@@ -94,6 +123,7 @@ final class DashboardViewModel: ObservableObject {
         case .onBreak: .orange
         case .completed: .blue
         case .overtime: Color(red: 0.78, green: 0.35, blue: 0.35)
+        case .voluntaryOvertime: Color(red: 0.78, green: 0.35, blue: 0.35)
         case .dayOff: Color(red: 0.35, green: 0.73, blue: 0.67)
         }
     }

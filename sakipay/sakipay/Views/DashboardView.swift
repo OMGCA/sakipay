@@ -60,6 +60,21 @@ struct DashboardView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer()
+
+            // Voluntary overtime toggle — only on normal completed / voluntary OT
+            if vm.todayStatus == .completed || vm.todayStatus == .voluntaryOvertime {
+                Button {
+                    vm.toggleVoluntaryOvertime()
+                } label: {
+                    Image(systemName: vm.todayStatus == .voluntaryOvertime
+                          ? "clock.badge.exclamationmark.fill"
+                          : "clock.badge.exclamationmark")
+                        .font(.subheadline)
+                        .foregroundStyle(vm.todayStatus == .voluntaryOvertime
+                                         ? vm.statusColor : .secondary)
+                }
+            }
+
             Button {
                 vm.togglePrivacy()
             } label: {

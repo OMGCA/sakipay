@@ -54,6 +54,9 @@ struct Index {
         this.dashboardVM.onPrivacyToggled = (): void => {
           this.refreshWidgets(appCtx)
         }
+        this.dashboardVM.onVoluntaryOvertimeToggled = (): void => {
+          this.refreshWidgets(appCtx)
+        }
       }).catch((err: Error): void => {
         Log.error(`DashboardVM init failed: ${err.message}`)
       })
@@ -247,6 +250,8 @@ struct Index {
       await store.initialise(ctx)
       const config: ConfigData = await store.loadConfig()
       const isPrivacy: boolean = await store.loadPrivacyMode()
+      const isVoluntaryOT: boolean = await store.loadVoluntaryOTActive()
+      const totalOTSeconds: number = await store.voluntaryOvertimeTotalSeconds()
 
       let amount: string = '0.00'
       let progress: number = 0
@@ -274,7 +279,7 @@ struct Index {
         // Load day overrides
         this.loadDayOverridesForWidget(calc, config.dayOverridesJSON)
 
-        const today = calc.calculateTodayEarnings()
+        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
         amount = today.amount.toFixed(2)
         progress = today.progress
         status = today.status as string
@@ -285,7 +290,8 @@ struct Index {
         'cardProgress': progress,
         'cardStatus': status,
         'cardCurrency': currency,
-        'cardPrivacy': isPrivacy ? '1' : '0'
+        'cardPrivacy': isPrivacy ? '1' : '0',
+        'cardVoluntaryOT': isVoluntaryOT ? '1' : '0'
       }
       const fbData: formBindingData.FormBindingData = formBindingData.createFormBindingData(data)
       for (const f of runningForms) {

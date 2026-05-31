@@ -39,9 +39,12 @@ export default class SakipayFormAbility extends FormExtensionAbility {
       let cardStatus: string = 'notStarted'
       let cardCurrency: string = config.currency
 
+      const isVoluntaryOT: boolean = await this.store.loadVoluntaryOTActive()
+      const totalOTSeconds: number = await this.store.voluntaryOvertimeTotalSeconds()
+
       if (config.monthlyPay > 0) {
         const calc: EarningsCalculator = this.buildCalculator(config)
-        const today: TodayEarnings = calc.calculateTodayEarnings()
+        const today: TodayEarnings = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
         cardAmount = today.amount.toFixed(2)
         cardProgress = today.progress
         cardStatus = today.status as string
@@ -54,7 +57,8 @@ export default class SakipayFormAbility extends FormExtensionAbility {
         'cardProgress': cardProgress,
         'cardStatus': cardStatus,
         'cardCurrency': cardCurrency,
-        'cardPrivacy': isPrivacy ? '1' : '0'
+        'cardPrivacy': isPrivacy ? '1' : '0',
+        'cardVoluntaryOT': isVoluntaryOT ? '1' : '0'
       }
 
       const formData: formBindingData.FormBindingData = formBindingData.createFormBindingData(updateData)
@@ -72,6 +76,10 @@ export default class SakipayFormAbility extends FormExtensionAbility {
         this.store.initialise(this.context).then((): void => {
           this.handlePrivacyToggle(formId)
         })
+      } else if (parsed.message === 'toggleVoluntaryOvertime') {
+        this.store.initialise(this.context).then((): void => {
+          this.handleVoluntaryOvertimeToggle(formId)
+        })
       }
     } catch (err) {
       Log.error(`onFormEvent parse failed: ${err}`)
@@ -85,6 +93,20 @@ export default class SakipayFormAbility extends FormExtensionAbility {
       await this.onUpdateForm(formId)
     } catch (err) {
       Log.error(`handlePrivacyToggle failed: ${err}`)
+    }
+  }
+
+  private async handleVoluntaryOvertimeToggle(formId: string): Promise<void> {
+    try {
+      const current: boolean = await this.store.loadVoluntaryOTActive()
+      if (current) {
+        await this.store.endVoluntaryOTSession()
+      } else {
+        await this.store.startVoluntaryOTSession()
+      }
+      await this.onUpdateForm(formId)
+    } catch (err) {
+      Log.error(`handleVoluntaryOvertimeToggle failed: ${err}`)
     }
   }
 

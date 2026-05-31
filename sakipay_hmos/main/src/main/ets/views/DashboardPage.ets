@@ -143,6 +143,25 @@ export struct DashboardPage {
 
       Blank()
 
+      // Voluntary overtime toggle — only on normal completed / voluntary OT
+      if (this.viewModel.todayStatus === WorkStatus.COMPLETED ||
+          this.viewModel.todayStatus === WorkStatus.VOLUNTARY_OVERTIME) {
+        Row() {
+          if (this.viewModel.todayStatus === WorkStatus.VOLUNTARY_OVERTIME) {
+            SymbolGlyph($r('sys.symbol.clock_fill'))
+              .fontSize(14)
+              .fontColor([this.getStatusColor()])
+          } else {
+            SymbolGlyph($r('sys.symbol.clock'))
+              .fontSize(14)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+        }
+        .onClick(() => {
+          this.viewModel.toggleVoluntaryOvertime()
+        })
+      }
+
       Row() {
         if (this.viewModel.isPrivacyMode) {
           SymbolGlyph($r('sys.symbol.eye_slash'))
@@ -380,7 +399,8 @@ export struct DashboardPage {
   @Monitor('viewModel.todayStatus')
   public onStatusChanged(): void {
     if (this.viewModel.todayStatus === WorkStatus.WORKING ||
-        this.viewModel.todayStatus === WorkStatus.OVERTIME) {
+        this.viewModel.todayStatus === WorkStatus.OVERTIME ||
+        this.viewModel.todayStatus === WorkStatus.VOLUNTARY_OVERTIME) {
       this.startPulse()
     } else {
       this.stopPulse()
@@ -455,6 +475,8 @@ export struct DashboardPage {
       case WorkStatus.COMPLETED:
         return $r('app.color.status_completed')
       case WorkStatus.OVERTIME:
+        return $r('app.color.status_overtime')
+      case WorkStatus.VOLUNTARY_OVERTIME:
         return $r('app.color.status_overtime')
       case WorkStatus.DAY_OFF:
         return $r('app.color.status_dayoff')

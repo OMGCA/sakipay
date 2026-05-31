@@ -134,6 +134,154 @@ export class PreferencesStore {
     }
   }
 
+  // ---- Voluntary Overtime Session State ----
+
+  public async saveVoluntaryOTActive(active: boolean): Promise<void> {
+    if (this.store === null) { return }
+    try {
+      await this.store.put('voluntaryOTActive', active ? 1 : 0)
+      await this.store.flush()
+    } catch (err) {
+      Log.error(`saveVoluntaryOTActive failed: ${err}`)
+    }
+  }
+
+  public async loadVoluntaryOTActive(): Promise<boolean> {
+    if (this.store === null) { return false }
+    try {
+      const val: number = (await this.store.get('voluntaryOTActive', 0)) as number
+      return val === 1
+    } catch (err) {
+      Log.error(`loadVoluntaryOTActive failed: ${err}`)
+      return false
+    }
+  }
+
+  public async saveVoluntaryOTAccumulated(seconds: number): Promise<void> {
+    if (this.store === null) { return }
+    try {
+      await this.store.put('voluntaryOTAccumulated', seconds)
+      await this.store.flush()
+    } catch (err) {
+      Log.error(`saveVoluntaryOTAccumulated failed: ${err}`)
+    }
+  }
+
+  public async loadVoluntaryOTAccumulated(): Promise<number> {
+    if (this.store === null) { return 0 }
+    try {
+      return (await this.store.get('voluntaryOTAccumulated', 0)) as number
+    } catch (err) {
+      Log.error(`loadVoluntaryOTAccumulated failed: ${err}`)
+      return 0
+    }
+  }
+
+  public async saveVoluntaryOTDate(dateStr: string): Promise<void> {
+    if (this.store === null) { return }
+    try {
+      await this.store.put('voluntaryOTDate', dateStr)
+      await this.store.flush()
+    } catch (err) {
+      Log.error(`saveVoluntaryOTDate failed: ${err}`)
+    }
+  }
+
+  public async loadVoluntaryOTDate(): Promise<string> {
+    if (this.store === null) { return '' }
+    try {
+      return (await this.store.get('voluntaryOTDate', '')) as string
+    } catch (err) {
+      Log.error(`loadVoluntaryOTDate failed: ${err}`)
+      return ''
+    }
+  }
+
+  public async saveVoluntaryOTSessionStart(timestamp: number): Promise<void> {
+    if (this.store === null) { return }
+    try {
+      await this.store.put('voluntaryOTSessionStart', timestamp)
+      await this.store.flush()
+    } catch (err) {
+      Log.error(`saveVoluntaryOTSessionStart failed: ${err}`)
+    }
+  }
+
+  public async loadVoluntaryOTSessionStart(): Promise<number> {
+    if (this.store === null) { return 0 }
+    try {
+      return (await this.store.get('voluntaryOTSessionStart', 0)) as number
+    } catch (err) {
+      Log.error(`loadVoluntaryOTSessionStart failed: ${err}`)
+      return 0
+    }
+  }
+
+  /**
+   * Computes the total voluntary OT seconds at the current moment.
+   * Returns 0 if no session is active or if the stored date is stale (different day).
+   * If stale, also resets the stored state.
+   */
+  public async voluntaryOvertimeTotalSeconds(): Promise<number> {
+    const active: boolean = await this.loadVoluntaryOTActive()
+    if (!active) { return 0 }
+
+    const storedDate: string = await this.loadVoluntaryOTDate()
+    const today: string = this.dateStringToday()
+    if (storedDate !== today) {
+      // Stale state from a previous day — reset
+      await this.saveVoluntaryOTActive(false)
+      await this.saveVoluntaryOTAccumulated(0)
+      await this.saveVoluntaryOTDate('')
+      await this.saveVoluntaryOTSessionStart(0)
+      return 0
+    }
+
+    const accumulated: number = await this.loadVoluntaryOTAccumulated()
+    const sessionStart: number = await this.loadVoluntaryOTSessionStart()
+    const nowSec: number = Date.now() / 1000
+    const sessionElapsed: number = Math.max(0, nowSec - sessionStart)
+    return accumulated + sessionElapsed
+  }
+
+  /**
+   * Starts a new voluntary OT session. Resets accumulated if the stored date is stale.
+   */
+  public async startVoluntaryOTSession(): Promise<void> {
+    const today: string = this.dateStringToday()
+    const storedDate: string = await this.loadVoluntaryOTDate()
+    if (storedDate !== today) {
+      await this.saveVoluntaryOTAccumulated(0)
+      await this.saveVoluntaryOTDate(today)
+    }
+    const nowSec: number = Date.now() / 1000
+    await this.saveVoluntaryOTSessionStart(nowSec)
+    await this.saveVoluntaryOTActive(true)
+  }
+
+  /**
+   * Ends the current voluntary OT session, adding its elapsed time to accumulated.
+   */
+  public async endVoluntaryOTSession(): Promise<void> {
+    const active: boolean = await this.loadVoluntaryOTActive()
+    if (!active) { return }
+    const sessionStart: number = await this.loadVoluntaryOTSessionStart()
+    const nowSec: number = Date.now() / 1000
+    const sessionElapsed: number = Math.max(0, nowSec - sessionStart)
+    const accumulated: number = await this.loadVoluntaryOTAccumulated()
+    await this.saveVoluntaryOTAccumulated(accumulated + sessionElapsed)
+    await this.saveVoluntaryOTActive(false)
+    await this.saveVoluntaryOTSessionStart(0)
+  }
+
+  private dateStringToday(): string {
+    const d: Date = new Date()
+    const y: number = d.getFullYear()
+    const m: number = d.getMonth() + 1
+    const day: number = d.getDate()
+    return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
   public async clear(): Promise<void> {
     if (this.store === null) {
       return

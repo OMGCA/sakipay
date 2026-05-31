@@ -92,6 +92,7 @@ enum WorkStatus {
     case onBreak
     case completed
     case overtime
+    case voluntaryOvertime
     case dayOff
 }
 
@@ -187,7 +188,12 @@ final class EarningsCalculator {
     var secondRate: Double { hourlyRate / 3600.0 }
     var totalWorkSeconds: Double { Double(max(0, schedule.totalWorkMinutes)) * 60.0 }
 
-    func calculateTodayEarnings(at date: Date = Date()) -> TodayEarnings {
+    /// - Parameter voluntaryOvertimeTotalSeconds: Pre-computed total OT seconds for the current
+    ///   session (accumulated from prior sessions today + elapsed in current session). When > 0,
+    ///   the calculator returns `.voluntaryOvertime` with earnings based on this duration at the
+    ///   normal secondRate. Pass 0 when no voluntary OT session is active.
+    func calculateTodayEarnings(at date: Date = Date(),
+                                voluntaryOvertimeTotalSeconds: Double = 0) -> TodayEarnings {
         guard !isDayOff(date) else {
             return TodayEarnings(amount: 0, progress: 0, status: .dayOff,
                                  elapsedSeconds: 0, totalWorkSeconds: totalWorkSeconds)
@@ -227,6 +233,17 @@ final class EarningsCalculator {
 
         // Completed: after work end
         if schedule.isAfterWork(currentMinute) {
+            // Voluntary overtime: only on normal workdays (not pre-planned overtime),
+            // triggered by user after work hours. Session duration is tracked externally
+            // and passed in as voluntaryOvertimeTotalSeconds.
+            if voluntaryOvertimeTotalSeconds > 0 && !isOvertime {
+                let overtimeAmount = voluntaryOvertimeTotalSeconds * secondRate
+                return TodayEarnings(amount: overtimeAmount, progress: 1,
+                                     status: .voluntaryOvertime,
+                                     elapsedSeconds: effectiveTotalSeconds,
+                                     totalWorkSeconds: effectiveTotalSeconds)
+            }
+
             let fullAmount = isOvertime
                 ? effectiveSecondRate * effectiveTotalSeconds * multiplier
                 : dailyRate

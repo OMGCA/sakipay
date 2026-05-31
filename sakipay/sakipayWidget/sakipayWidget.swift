@@ -22,6 +22,29 @@ struct TogglePrivacyIntent: AppIntent {
     }
 }
 
+// MARK: - Toggle Voluntary Overtime Intent
+
+struct ToggleVoluntaryOvertimeIntent: AppIntent {
+    static let title: LocalizedStringResource = "Toggle Voluntary Overtime"
+
+    @Parameter(title: "Voluntary Overtime")
+    var isOn: Bool
+
+    init() { isOn = false }
+
+    init(isOn: Bool) { self.isOn = isOn }
+
+    func perform() async throws -> some IntentResult {
+        let store = AppGroupStore()
+        if isOn {
+            store.startVoluntaryOTSession()
+        } else {
+            store.endVoluntaryOTSession()
+        }
+        return .result()
+    }
+}
+
 // MARK: - Timeline Entry
 
 struct EarningsEntry: TimelineEntry {
@@ -31,6 +54,7 @@ struct EarningsEntry: TimelineEntry {
     let status: WorkStatus
     let currency: String
     let isPrivacyMode: Bool
+    let isVoluntaryOvertimeActive: Bool
 }
 
 // MARK: - Provider
@@ -39,7 +63,8 @@ struct EarningsProvider: TimelineProvider {
     private let store = AppGroupStore()
 
     func placeholder(in context: Context) -> EarningsEntry {
-        EarningsEntry(date: Date(), todayAmount: 218.50, todayProgress: 0.6, status: .working, currency: "¥", isPrivacyMode: false)
+        EarningsEntry(date: Date(), todayAmount: 218.50, todayProgress: 0.6, status: .working,
+                      currency: "¥", isPrivacyMode: false, isVoluntaryOvertimeActive: false)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (EarningsEntry) -> Void) {
@@ -50,7 +75,9 @@ struct EarningsProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<EarningsEntry>) -> Void) {
         let now = Date()
         let calc = store.readCalculator()
-        let today = calc.calculateTodayEarnings(at: now)
+        let voluntaryOT = store.voluntaryOTActive
+        let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: now)
+        let today = calc.calculateTodayEarnings(at: now, voluntaryOvertimeTotalSeconds: totalOTSeconds)
         let privacy = store.isPrivacyMode
         let entry = EarningsEntry(
             date: now,
@@ -58,21 +85,24 @@ struct EarningsProvider: TimelineProvider {
             todayProgress: today.progress,
             status: today.status,
             currency: store.readCurrency(),
-            isPrivacyMode: privacy
+            isPrivacyMode: privacy,
+            isVoluntaryOvertimeActive: voluntaryOT
         )
 
         var entries: [EarningsEntry] = [entry]
 
         let refreshDates = timelineRefreshDates(from: now, calc: calc, status: today.status)
         for refreshDate in refreshDates {
-            let t = calc.calculateTodayEarnings(at: refreshDate)
+            let t = calc.calculateTodayEarnings(at: refreshDate,
+                                                 voluntaryOvertimeTotalSeconds: store.voluntaryOvertimeTotalSeconds(now: refreshDate))
             entries.append(EarningsEntry(
                 date: refreshDate,
                 todayAmount: t.amount,
                 todayProgress: t.progress,
                 status: t.status,
                 currency: store.readCurrency(),
-                isPrivacyMode: privacy
+                isPrivacyMode: privacy,
+                isVoluntaryOvertimeActive: voluntaryOT
             ))
         }
 
@@ -82,14 +112,17 @@ struct EarningsProvider: TimelineProvider {
 
     private func makeEntry(for date: Date) -> EarningsEntry {
         let calc = store.readCalculator()
-        let today = calc.calculateTodayEarnings(at: date)
+        let voluntaryOT = store.voluntaryOTActive
+        let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: date)
+        let today = calc.calculateTodayEarnings(at: date, voluntaryOvertimeTotalSeconds: totalOTSeconds)
         return EarningsEntry(
             date: date,
             todayAmount: today.amount,
             todayProgress: today.progress,
             status: today.status,
             currency: store.readCurrency(),
-            isPrivacyMode: store.isPrivacyMode
+            isPrivacyMode: store.isPrivacyMode,
+            isVoluntaryOvertimeActive: voluntaryOT
         )
     }
 
@@ -109,7 +142,7 @@ struct EarningsProvider: TimelineProvider {
 
         let interval: Int
         switch status {
-        case .working, .onBreak, .overtime:
+        case .working, .onBreak, .overtime, .voluntaryOvertime:
             interval = 5
         case .notStarted:
             interval = 15
@@ -168,13 +201,27 @@ struct sakipayWidgetEntryView: View {
                 .animation(.spring(response: 0.6, dampingFraction: 0.7), value: entry.todayProgress)
 
             VStack(spacing: 8) {
-                // Privacy toggle
-                Button(intent: TogglePrivacyIntent(isOn: !entry.isPrivacyMode)) {
-                    Image(systemName: entry.isPrivacyMode ? "eye.slash.fill" : "eye.fill")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(entry.isPrivacyMode ? .orange : .secondary)
+                // Voluntary overtime + Privacy toggles
+                HStack(spacing: 8) {
+                    if entry.status == .completed || entry.status == .voluntaryOvertime {
+                        Button(intent: ToggleVoluntaryOvertimeIntent(isOn: !entry.isVoluntaryOvertimeActive)) {
+                            Image(systemName: entry.status == .voluntaryOvertime
+                                  ? "clock.badge.exclamationmark.fill"
+                                  : "clock.badge.exclamationmark")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(entry.status == .voluntaryOvertime
+                                                 ? statusColor : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Button(intent: TogglePrivacyIntent(isOn: !entry.isPrivacyMode)) {
+                        Image(systemName: entry.isPrivacyMode ? "eye.slash.fill" : "eye.fill")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(entry.isPrivacyMode ? .orange : .secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
 
                 if entry.status == .dayOff {
                     Text("🏖️")
@@ -217,6 +264,7 @@ struct sakipayWidgetEntryView: View {
         case .onBreak: .orange
         case .completed: .blue
         case .overtime: Color(red: 0.78, green: 0.35, blue: 0.35)
+        case .voluntaryOvertime: Color(red: 0.78, green: 0.35, blue: 0.35)
         case .dayOff: Color(red: 0.35, green: 0.73, blue: 0.67)
         }
     }
@@ -228,6 +276,7 @@ struct sakipayWidgetEntryView: View {
         case .onBreak: "休息中"
         case .completed: "下班啦！"
         case .overtime: "加班中 💪"
+        case .voluntaryOvertime: "自愿加班中"
         case .dayOff: "休息日"
         }
     }

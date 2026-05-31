@@ -15,6 +15,7 @@ struct WidgetCard {
   @LocalStorageProp('cardStatus') cardStatus: string = 'notStarted'
   @LocalStorageProp('cardCurrency') cardCurrency: string = '¥'
   @LocalStorageProp('cardPrivacy') isPrivacyMode: string = '0'
+  @LocalStorageProp('cardVoluntaryOT') cardVoluntaryOT: string = '0'
   @State private contentScale: number = 1
 
   public build(): void {
@@ -26,26 +27,49 @@ struct WidgetCard {
         .backgroundColor($r('app.color.progress_track'))
 
       Column({ space: 4 }) {
-        // Privacy toggle — above the number
-        Row() {
-          if (this.isPrivacyMode === '1') {
-            SymbolGlyph($r('sys.symbol.eye_slash'))
-              .fontSize(16)
-              .fontColor([$r('app.color.accent_orange')])
-          } else {
-            SymbolGlyph($r('sys.symbol.eye'))
-              .fontSize(16)
-              .fontColor([$r('app.color.text_secondary')])
+        // Voluntary OT + Privacy toggles — above the number
+        Row({ space: 8 }) {
+          // Voluntary overtime toggle — only on normal completed / voluntary OT
+          if (this.cardStatus === 'completed' || this.cardStatus === 'voluntaryOvertime') {
+            Row() {
+              if (this.cardStatus === 'voluntaryOvertime') {
+                SymbolGlyph($r('sys.symbol.clock_fill'))
+                  .fontSize(14)
+                  .fontColor([this.statusColor()])
+              } else {
+                SymbolGlyph($r('sys.symbol.clock'))
+                  .fontSize(14)
+                  .fontColor([$r('app.color.text_secondary')])
+              }
+            }
+            .onClick(() => {
+              postCardAction(this, {
+                action: 'message',
+                params: { message: 'toggleVoluntaryOvertime' }
+              })
+            })
           }
+
+          Row() {
+            if (this.isPrivacyMode === '1') {
+              SymbolGlyph($r('sys.symbol.eye_slash'))
+                .fontSize(16)
+                .fontColor([$r('app.color.accent_orange')])
+            } else {
+              SymbolGlyph($r('sys.symbol.eye'))
+                .fontSize(16)
+                .fontColor([$r('app.color.text_secondary')])
+            }
+          }
+          .onClick(() => {
+            postCardAction(this, {
+              action: 'message',
+              params: { message: 'togglePrivacy' }
+            })
+          })
         }
         .justifyContent(FlexAlign.Center)
         .margin({ bottom: 6 })
-        .onClick(() => {
-          postCardAction(this, {
-            action: 'message',
-            params: { message: 'togglePrivacy' }
-          })
-        })
 
         if (this.cardStatus === 'dayOff') {
           Text('🏖️')
@@ -107,6 +131,7 @@ struct WidgetCard {
     if (this.cardStatus === 'onBreak') { return $r('app.color.status_break') }
     if (this.cardStatus === 'completed') { return $r('app.color.status_completed') }
     if (this.cardStatus === 'overtime') { return $r('app.color.status_overtime') }
+    if (this.cardStatus === 'voluntaryOvertime') { return $r('app.color.status_overtime') }
     if (this.cardStatus === 'dayOff') { return $r('app.color.status_dayoff') }
     return $r('app.color.status_inactive')
   }
@@ -117,6 +142,7 @@ struct WidgetCard {
     if (this.cardStatus === 'onBreak') { return '休息中' }
     if (this.cardStatus === 'completed') { return '下班啦！' }
     if (this.cardStatus === 'overtime') { return '加班中 💪' }
+    if (this.cardStatus === 'voluntaryOvertime') { return '自愿加班中' }
     return '休息日'
   }
 }

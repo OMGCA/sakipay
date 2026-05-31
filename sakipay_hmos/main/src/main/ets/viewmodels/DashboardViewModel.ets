@@ -19,17 +19,22 @@ export class DashboardViewModel {
   @Trace public isConfigured: boolean = false
   @Trace public monthSummary: MonthSummary = new MonthSummary()
   @Trace public isPrivacyMode: boolean = false
+  @Trace public isVoluntaryOvertimeActive: boolean = false
 
   private calculator: EarningsCalculator = new EarningsCalculator()
   private timerId: number = -1
   private store: PreferencesStore = new PreferencesStore()
+  private previousStatus: WorkStatus = WorkStatus.NOT_STARTED
 
   /** Callback invoked after privacy toggle — wired to widget refresh in Index. */
   public onPrivacyToggled: (() => void) | null = null
+  /** Callback invoked after voluntary OT toggle — wired to widget refresh in Index. */
+  public onVoluntaryOvertimeToggled: (() => void) | null = null
 
   public async initialise(context: Context): Promise<void> {
     await this.store.initialise(context)
     this.isPrivacyMode = await this.store.loadPrivacyMode()
+    this.isVoluntaryOvertimeActive = await this.store.loadVoluntaryOTActive()
   }
 
   public async togglePrivacy(): Promise<void> {
@@ -37,6 +42,24 @@ export class DashboardViewModel {
     await this.store.savePrivacyMode(this.isPrivacyMode)
     if (this.onPrivacyToggled !== null) {
       this.onPrivacyToggled()
+    }
+  }
+
+  /**
+   * Toggles voluntary overtime on/off. When starting, begins a new session counting from now.
+   * When ending, accumulates the current session's elapsed time. Sessions accumulate across
+   * toggles within the same day and reset on the next working day.
+   */
+  public async toggleVoluntaryOvertime(): Promise<void> {
+    if (this.isVoluntaryOvertimeActive) {
+      await this.store.endVoluntaryOTSession()
+    } else {
+      await this.store.startVoluntaryOTSession()
+    }
+    this.isVoluntaryOvertimeActive = await this.store.loadVoluntaryOTActive()
+    this.refresh()
+    if (this.onVoluntaryOvertimeToggled !== null) {
+      this.onVoluntaryOvertimeToggled()
     }
   }
 
@@ -78,12 +101,31 @@ export class DashboardViewModel {
     this.startTimer()
   }
 
+  /**
+   * Refreshes earnings data. Re-reads voluntary OT session state from the store
+   * on every call so that widget toggles are picked up by the app.
+   */
   public refresh(): void {
-    const today: TodayEarnings = this.calculator.calculateTodayEarnings()
-    this.todayAmount = today.amount
-    this.todayProgress = today.progress
-    this.todayStatus = today.status
-    this.monthSummary = this.calculator.calculateMonthSummary()
+    this.store.loadVoluntaryOTActive().then((isActive: boolean): void => {
+      this.isVoluntaryOvertimeActive = isActive
+      this.store.voluntaryOvertimeTotalSeconds().then((totalOTSeconds: number): void => {
+        const today: TodayEarnings = this.calculator.calculateTodayEarnings(new Date(),
+          totalOTSeconds)
+
+        // Reset voluntary OT accumulation when a new work day begins
+        // (transition from notStarted to working)
+        if (today.status === WorkStatus.WORKING && this.previousStatus === WorkStatus.NOT_STARTED) {
+          this.store.saveVoluntaryOTAccumulated(0)
+          this.store.saveVoluntaryOTDate('')
+        }
+        this.previousStatus = today.status
+
+        this.todayAmount = today.amount
+        this.todayProgress = today.progress
+        this.todayStatus = today.status
+        this.monthSummary = this.calculator.calculateMonthSummary()
+      })
+    })
   }
 
   public startTimer(): void {
@@ -112,6 +154,8 @@ export class DashboardViewModel {
         return '下班啦！'
       case WorkStatus.OVERTIME:
         return '加班攒钱中 💪'
+      case WorkStatus.VOLUNTARY_OVERTIME:
+        return '自愿加班中 😤'
       case WorkStatus.DAY_OFF:
         return '休息日'
       default:
