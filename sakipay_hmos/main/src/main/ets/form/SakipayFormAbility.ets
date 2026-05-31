@@ -2,6 +2,8 @@
 import { formBindingData, formInfo, formProvider, FormExtensionAbility } from '@kit.FormKit'
 import { ConfigData, PreferencesStore } from '../services/PreferencesStore'
 import { EarningsCalculator, TodayEarnings, BreakScheduleEntry } from '../models/EarningsCalculator'
+import { HolidayCalendarData, DayOverride, DayType } from '../models/HolidayCalendar'
+import { HolidayCalendarService } from '../services/HolidayCalendarService'
 import { Log } from '../services/Log'
 
 export default class SakipayFormAbility extends FormExtensionAbility {
@@ -109,6 +111,47 @@ export default class SakipayFormAbility extends FormExtensionAbility {
     calc.payDay = config.payDay
     calc.schedule.workStartMinutes = config.workStartHour * 60 + config.workStartMinute
     calc.schedule.workEndMinutes = config.workEndHour * 60 + config.workEndMinute
+
+    // Load holiday calendar
+    try {
+      HolidayCalendarService.getInstance().loadBundledCalendars(this.context)
+      calc.holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
+    } catch (e) {
+      Log.error(`Widget load holiday calendar: ${e}`)
+    }
+
+    // Load day overrides
+    if (config.dayOverridesJSON.length > 0) {
+      try {
+        const arr: object[] = JSON.parse(config.dayOverridesJSON) as object[]
+        const overrides: Map<string, DayOverride> = new Map()
+        for (const item of arr) {
+          const obj: Record<string, Object> = item as Record<string, Object>
+          const override: DayOverride = new DayOverride()
+          if (obj.dateString !== undefined) {
+            override.dateString = obj.dateString as string
+          }
+          if (obj.dayType !== undefined) {
+            const dt: string = obj.dayType as string
+            if (dt === DayType.HOLIDAY) {
+              override.dayType = DayType.HOLIDAY
+            } else if (dt === DayType.OVERTIME) {
+              override.dayType = DayType.OVERTIME
+            }
+          }
+          if (obj.overtimeMultiplier !== undefined) {
+            override.overtimeMultiplier = obj.overtimeMultiplier as number
+          }
+          if (obj.customWorkHours !== undefined && obj.customWorkHours !== null) {
+            override.customWorkHours = obj.customWorkHours as number
+          }
+          overrides.set(override.dateString, override)
+        }
+        calc.dayOverrides = overrides
+      } catch (e) {
+        Log.error(`Widget parse day overrides: ${e}`)
+      }
+    }
 
     if (config.breaksJSON.length > 0) {
       try {

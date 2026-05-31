@@ -1,12 +1,9 @@
 /* (c) Copyright XiatStudio 2026~2026 */
 import { SettingsViewModel } from '../viewmodels/SettingsViewModel'
 import { BreakSegment } from '../models/BreakSegment'
-import { DayOverride, HolidayCalendarData } from '../models/HolidayCalendar'
-import { HolidayCalendarService } from '../services/HolidayCalendarService'
 import { IconFont, IconFontView } from '../services/IconFont'
 import { Vibrator } from '@kit.SensorServiceKit'
 import { common, Want } from '@kit.AbilityKit'
-import { CalendarSheetPage } from './CalendarSheetPage'
 
 type SaveCallback = () => void
 
@@ -14,6 +11,8 @@ type SaveCallback = () => void
 export struct SettingsPage {
   @Require @Param public viewModel: SettingsViewModel
   @Param public onSaved: SaveCallback = (): void => {}
+  @Param public onCalendarSaved: SaveCallback = (): void => {}
+  @Param public onShowCalendar: SaveCallback = (): void => {}
 
   private hourOptions: string[] = []
   private minuteOptions: string[] = []
@@ -22,7 +21,6 @@ export struct SettingsPage {
   // Force ForEach re-render when breaks are added/removed (bypasses V2 @Param tracing)
   @Local private breakListKey: number = 0
   @Local private showCalendar: boolean = false
-  @Local private holidayCalendar: HolidayCalendarData | null = null
 
   /**
    * Trigger a short haptic pulse on picker value change.
@@ -40,13 +38,6 @@ export struct SettingsPage {
     if (!this.viewModel.isLoaded) {
       this.viewModel.loadConfig()
     }
-    // Load holiday calendar
-    const ctx: common.UIAbilityContext | undefined = this.getUIContext().getHostContext() as
-      common.UIAbilityContext | undefined
-    if (ctx !== undefined) {
-      HolidayCalendarService.getInstance().loadBundledCalendars(ctx)
-    }
-    this.holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
   }
 
   public build(): void {
@@ -100,28 +91,7 @@ export struct SettingsPage {
           .margin({ bottom: 24 })
       }
 
-      // Calendar overlay
-      if (this.showCalendar) {
-        Stack() {
-          CalendarSheetPage({
-            holidayCalendar: this.holidayCalendar,
-            dayOverrides: this.viewModel.dayOverrides,
-            onOverrideSaved: (override: DayOverride): void => {
-              this.viewModel.addOrUpdateOverride(override)
-            },
-            onOverrideReset: (dateString: string): void => {
-              this.viewModel.removeOverride(dateString)
-            },
-            onClose: (): void => {
-              this.showCalendar = false
-            }
-          })
-        }
-        .width('100%')
-        .height('100%')
-        .position({ x: 0, y: 0 })
-        .zIndex(100)
-      }
+      // Calendar popup is rendered at Index level (above tab bar)
     }
     .width('100%')
     .height('100%')
@@ -176,20 +146,26 @@ export struct SettingsPage {
       Row() {
         Text('每月工作天数').fontSize(14)
         Blank()
-        TextInput({ text: this.formatWorkingDays() })
-          .type(InputType.Normal)
-          .width(80)
-          .textAlign(TextAlign.End)
-          .onChange((value: string) => {
-            const filtered: string = this.filterDecimal(value)
-            const n: number = parseFloat(filtered)
-            if (!isNaN(n) && n > 0 && n <= 31) {
-              this.viewModel.workingDays = n
-            }
-            if (filtered.length === 0) {
-              this.viewModel.workingDays = 0
-            }
-          })
+        if (this.viewModel.useCalibratedWorkDays) {
+          Text(`${this.viewModel.calibratedWorkingDays} 天`)
+            .fontSize(14)
+            .fontColor($r('app.color.text_secondary'))
+        } else {
+          TextInput({ text: this.formatWorkingDays() })
+            .type(InputType.Normal)
+            .width(80)
+            .textAlign(TextAlign.End)
+            .onChange((value: string) => {
+              const filtered: string = this.filterDecimal(value)
+              const n: number = parseFloat(filtered)
+              if (!isNaN(n) && n > 0 && n <= 31) {
+                this.viewModel.workingDays = n
+              }
+              if (filtered.length === 0) {
+                this.viewModel.workingDays = 0
+              }
+            })
+        }
       }
       .width('100%')
     }
@@ -525,14 +501,14 @@ export struct SettingsPage {
           .fontSize(14)
           .fontColor($r('app.color.accent_blue'))
         Blank()
-        Text(`${this.viewModel.dayOverrides.length} 天已标记`)
+        Text('标记自定义日')
           .fontSize(12)
           .fontColor($r('app.color.text_secondary'))
         IconFontView({ code: IconFont.CHEVRON_RIGHT, iconSize: 12, iconColor: $r('app.color.text_secondary') })
       }
       .width('100%')
       .onClick(() => {
-        this.openCalendarPage()
+        this.onShowCalendar()
       })
 
       Divider().strokeWidth(0.5).color($r('app.color.progress_track'))
@@ -571,10 +547,6 @@ export struct SettingsPage {
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
     .shadow({ radius: 8, color: $r('app.color.card_shadow'), offsetX: 0, offsetY: 2 })
     .border({ width: 0.5, color: $r('app.color.glass_border') })
-  }
-
-  private openCalendarPage(): void {
-    this.showCalendar = true
   }
 
   @Builder

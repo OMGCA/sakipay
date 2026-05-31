@@ -1,4 +1,6 @@
 /* (c) Copyright XiatStudio 2026~2026 */
+import { HolidayCalendarData, DayOverride, DayType } from './HolidayCalendar'
+
 /**
  * A single break entry in the work schedule.
  */
@@ -179,6 +181,8 @@ export class EarningsCalculator {
   public schedule: WorkSchedule = new WorkSchedule()
   public payDay: number = 15
   public taxRate: number = 0
+  public holidayCalendar: HolidayCalendarData | null = null
+  public dayOverrides: Map<string, DayOverride> = new Map()
 
   public get dailyRate(): number {
     if (this.workingDaysPerMonth <= 0) {
@@ -214,6 +218,15 @@ export class EarningsCalculator {
     const currentMinute: number = date.getHours() * 60 + date.getMinutes()
     const currentSec: number = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
 
+    // Determine overtime config for today (if any)
+    const ds: string = this.dateStringFromDate(date)
+    const override: DayOverride | undefined = this.dayOverrides.get(ds)
+    const isOvertime: boolean = override !== undefined && override.dayType === DayType.OVERTIME
+    const multiplier: number = isOvertime ? (override!.overtimeMultiplier) : 1.0
+    const effectiveTotalSeconds: number = this.totalWorkSeconds
+
+    result.totalWorkSeconds = effectiveTotalSeconds
+
     // Not started: before work start (and not in cross-midnight's next-day portion)
     if (!this.schedule.isInWorkWindow(currentMinute) && !this.schedule.isAfterWork(currentMinute)) {
       result.status = WorkStatus.NOT_STARTED
@@ -222,10 +235,11 @@ export class EarningsCalculator {
 
     // Completed: after work end
     if (this.schedule.isAfterWork(currentMinute)) {
-      result.amount = this.dailyRate
+      const fullAmount: number = isOvertime ? this.secondRate * effectiveTotalSeconds * multiplier : this.dailyRate
+      result.amount = fullAmount
       result.progress = 1
       result.status = WorkStatus.COMPLETED
-      result.elapsedSeconds = result.totalWorkSeconds
+      result.elapsedSeconds = effectiveTotalSeconds
       return result
     }
 
@@ -236,9 +250,11 @@ export class EarningsCalculator {
       const breakStartSec: number = activeBreak.startMinutes * 60
       const breakStartElapsedSec: number = this.schedule.elapsedSinceStartSeconds(breakStartSec)
       const priorBreakSec: number = this.schedule.elapsedBreakSeconds(breakStartSec)
-      result.elapsedSeconds = Math.max(0, breakStartElapsedSec - priorBreakSec)
-      result.amount = this.secondRate * result.elapsedSeconds
-      result.progress = result.totalWorkSeconds > 0 ? result.elapsedSeconds / result.totalWorkSeconds : 0
+      let elapsedSec: number = Math.max(0, breakStartElapsedSec - priorBreakSec)
+      elapsedSec = Math.min(elapsedSec, effectiveTotalSeconds)
+      result.elapsedSeconds = elapsedSec
+      result.amount = this.secondRate * elapsedSec * multiplier
+      result.progress = effectiveTotalSeconds > 0 ? elapsedSec / effectiveTotalSeconds : 0
       result.status = WorkStatus.ON_BREAK
       return result
     }
@@ -246,9 +262,11 @@ export class EarningsCalculator {
     // Working: work elapsed = time from work start to now, minus all completed breaks
     const nowElapsedSec: number = this.schedule.elapsedSinceStartSeconds(currentSec)
     const elapsedBreakSec: number = this.schedule.elapsedBreakSeconds(currentSec)
-    result.elapsedSeconds = Math.max(0, nowElapsedSec - elapsedBreakSec)
-    result.amount = this.secondRate * result.elapsedSeconds
-    result.progress = result.totalWorkSeconds > 0 ? result.elapsedSeconds / result.totalWorkSeconds : 0
+    let elapsedSec: number = Math.max(0, nowElapsedSec - elapsedBreakSec)
+    elapsedSec = Math.min(elapsedSec, effectiveTotalSeconds)
+    result.elapsedSeconds = elapsedSec
+    result.amount = this.secondRate * elapsedSec * multiplier
+    result.progress = effectiveTotalSeconds > 0 ? elapsedSec / effectiveTotalSeconds : 0
     result.status = WorkStatus.WORKING
     return result
   }
@@ -260,8 +278,8 @@ export class EarningsCalculator {
     summary.workingDaysThisMonth = workingDays
     summary.workingDaysElapsed = elapsedDays
     summary.monthProgress = workingDays > 0 ? elapsedDays / workingDays : 0
-    summary.monthEarnings = this.dailyRate * elapsedDays
-    summary.totalMonthEarnings = this.dailyRate * workingDays
+    summary.monthEarnings = this.calculateElapsedMonthEarnings(date)
+    summary.totalMonthEarnings = this.calculateTotalMonthEarnings(date)
 
     const paydayInfo = this.calculatePayday(date)
     summary.daysUntilPayday = paydayInfo[0]
@@ -275,9 +293,94 @@ export class EarningsCalculator {
     return summary
   }
 
+  private dateStringFromDate(date: Date): string {
+    const y: number = date.getFullYear()
+    const m: number = date.getMonth() + 1
+    const d: number = date.getDate()
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+
+  /**
+   * Three-tier day-off determination: user override > holiday calendar > weekend check.
+   */
   private isDayOff(date: Date): boolean {
-    const day: number = date.getDay()
-    return day === 0 || day === 6
+    const month: number = date.getMonth() + 1
+    const day: number = date.getDate()
+
+    // Tier 1: user override
+    const ds: string = this.dateStringFromDate(date)
+    const override: DayOverride | undefined = this.dayOverrides.get(ds)
+    if (override !== undefined) {
+      switch (override.dayType) {
+        case DayType.NORMAL:
+          break // fall through to calendar/weekend check
+        case DayType.HOLIDAY:
+          return true
+        case DayType.OVERTIME:
+          return false // overtime days are working days
+      }
+    }
+
+    // Tier 2: Chinese holiday calendar
+    if (this.holidayCalendar !== null) {
+      if (this.holidayCalendar.isHoliday(month, day)) {
+        return true
+      }
+      if (this.holidayCalendar.isAdjustedWorkday(month, day)) {
+        return false
+      }
+    }
+
+    // Tier 3: weekend fallback
+    const wd: number = date.getDay()
+    return wd === 0 || wd === 6
+  }
+
+  /**
+   * Returns the per-day earnings for a given date, accounting for overtime.
+   */
+  private dailyEarningsForDate(date: Date): number {
+    const ds: string = this.dateStringFromDate(date)
+    const override: DayOverride | undefined = this.dayOverrides.get(ds)
+    if (override !== undefined && override.dayType === DayType.OVERTIME) {
+      const multiplier: number = override.overtimeMultiplier
+      const hours: number = this.schedule.totalWorkHours
+      return this.secondRate * hours * 3600 * multiplier
+    }
+    if (this.isDayOff(date)) {
+      return 0
+    }
+    return this.dailyRate
+  }
+
+  /**
+   * Sums the earnings for every elapsed working day in the month (including today if working).
+   */
+  private calculateElapsedMonthEarnings(date: Date): number {
+    const year: number = date.getFullYear()
+    const month: number = date.getMonth()
+    const today: number = date.getDate()
+    let total: number = 0
+    for (let d: number = 1; d <= today; d++) {
+      const check: Date = new Date(year, month, d)
+      total += this.dailyEarningsForDate(check)
+    }
+    return total
+  }
+
+  /**
+   * Sums the earnings for every working day in the entire month.
+   */
+  private calculateTotalMonthEarnings(date: Date): number {
+    const year: number = date.getFullYear()
+    const month: number = date.getMonth()
+    const daysInMonth: number = new Date(year, month + 1, 0).getDate()
+    let total: number = 0
+    for (let d: number = 1; d <= daysInMonth; d++) {
+      const check: Date = new Date(year, month, d)
+      total += this.dailyEarningsForDate(check)
+    }
+    return total
   }
 
   private countWorkingDaysInMonth(date: Date): number {
@@ -287,8 +390,7 @@ export class EarningsCalculator {
     let count: number = 0
     for (let d: number = 1; d <= daysInMonth; d++) {
       const check: Date = new Date(year, month, d)
-      const wd: number = check.getDay()
-      if (wd !== 0 && wd !== 6) {
+      if (!this.isDayOff(check)) {
         count++
       }
     }
@@ -302,8 +404,7 @@ export class EarningsCalculator {
     let count: number = 0
     for (let d: number = 1; d <= today; d++) {
       const check: Date = new Date(year, month, d)
-      const wd: number = check.getDay()
-      if (wd !== 0 && wd !== 6) {
+      if (!this.isDayOff(check)) {
         count++
       }
     }

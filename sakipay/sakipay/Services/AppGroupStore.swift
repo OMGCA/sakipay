@@ -8,6 +8,7 @@ final class AppGroupStore {
         case monthlyPay, workingDaysPerMonth, currency, taxRate
         case workStartMinutes, workEndMinutes
         case breaksJSON
+        case dayOverridesJSON
         case isPrivacyMode
     }
 
@@ -21,7 +22,8 @@ final class AppGroupStore {
     }
 
     func sync(monthlyPay: Double, workingDaysPerMonth: Double, currency: String, taxRate: Double,
-              workStartMinutes: Int, workEndMinutes: Int, breaks: [BreakSegment]) {
+              workStartMinutes: Int, workEndMinutes: Int, breaks: [BreakSegment],
+              dayOverridesJSON: String = "") {
         defaults?.set(monthlyPay, forKey: Key.monthlyPay.rawValue)
         defaults?.set(workingDaysPerMonth, forKey: Key.workingDaysPerMonth.rawValue)
         defaults?.set(currency, forKey: Key.currency.rawValue)
@@ -33,6 +35,13 @@ final class AppGroupStore {
            let str = String(data: data, encoding: .utf8) {
             defaults?.set(str, forKey: Key.breaksJSON.rawValue)
         }
+
+        if !dayOverridesJSON.isEmpty {
+            defaults?.set(dayOverridesJSON, forKey: Key.dayOverridesJSON.rawValue)
+        } else {
+            defaults?.removeObject(forKey: Key.dayOverridesJSON.rawValue)
+        }
+
         // Force flush to disk so the widget extension process sees fresh data immediately
         defaults?.synchronize()
     }
@@ -53,8 +62,20 @@ final class AppGroupStore {
             breaks = [BreakSchedule(startMinutes: 720, endMinutes: 810)]
         }
 
+        let dayOverrides: [String: DayOverride]
+        if let json = defaults?.string(forKey: Key.dayOverridesJSON.rawValue),
+           let data = json.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([DayOverride].self, from: data) {
+            dayOverrides = Dictionary(uniqueKeysWithValues: decoded.map { ($0.dateString, $0) })
+        } else {
+            dayOverrides = [:]
+        }
+
+        let hc = HolidayCalendarService.shared.currentCalendar()
         let schedule = WorkSchedule(workStartMinutes: wsMin, workEndMinutes: weMin, breaks: breaks)
-        return EarningsCalculator(monthlyPay: monthlyPay, workingDaysPerMonth: workingDays, schedule: schedule, payDay: 15, taxRate: taxRate)
+        return EarningsCalculator(monthlyPay: monthlyPay, workingDaysPerMonth: workingDays,
+                                 schedule: schedule, payDay: 15, taxRate: taxRate,
+                                 holidayCalendar: hc, dayOverrides: dayOverrides)
     }
 
     func readCurrency() -> String {

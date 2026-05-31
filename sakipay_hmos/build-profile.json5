@@ -5,26 +5,26 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "storeFile": "your-keystore.p12",
-          "storePassword": "your-keystore-password",
-          "keyAlias": "your-key-alias",
-          "keyPassword": "your-key-password",
+          "certpath": "/Users/sebastianx/.ohos/config/default_sakipay_hmos_AMcnjaSPnq62pfu8pS_0YmPUG2K-YHGTUbOdXB0HPm4=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BB9B7CAEECF3D0506E3CC9DABF4097D0255C9BA79A9C254B8ABA8452A36AB1E7E53398104B9FE6F",
+          "profile": "/Users/sebastianx/.ohos/config/default_sakipay_hmos_AMcnjaSPnq62pfu8pS_0YmPUG2K-YHGTUbOdXB0HPm4=.p7b",
           "signAlg": "SHA256withECDSA",
-          "profile": "your-profile.p7b",
-          "certpath": "your-certificate.cer"
+          "storeFile": "/Users/sebastianx/.ohos/config/default_sakipay_hmos_AMcnjaSPnq62pfu8pS_0YmPUG2K-YHGTUbOdXB0HPm4=.p12",
+          "storePassword": "0000001BDC64790DA009FE7F5C138D3E26667D6E556B9644638A8A9CBE68670C62BF0981897306BC80974F"
         }
       },
       {
         "name": "release",
         "type": "HarmonyOS",
         "material": {
-          "storeFile": "your-keystore.p12",
-          "storePassword": "your-keystore-password",
-          "keyAlias": "your-key-alias",
-          "keyPassword": "your-key-password",
+          "storeFile": "/Users/sebastianx/work/code/sakipay/hmos_publish/publish.p12",
+          "storePassword": "00000019BB6CA8E0D4BF1ABEF887B93C44ABFCC6C7DB7DD6415B0E270612403E4F07C1B5DFE09FFB89",
+          "keyAlias": "publish_xt",
+          "keyPassword": "000000198F9CDC52E0FC821E1111D03C377131E310D341A663455D5E556CC9DFFED99646887D062128",
           "signAlg": "SHA256withECDSA",
-          "profile": "your-profile.p7b",
-          "certpath": "your-certificate.cer"
+          "profile": "/Users/sebastianx/work/code/sakipay/hmos_publish/publish_newRelease.p7b",
+          "certpath": "/Users/sebastianx/work/code/sakipay/hmos_publish/sakipay_publish_new.cer"
         }
       }
     ],
@@ -33,7 +33,7 @@
         "name": "default",
         "signingConfig": "default",
         "targetSdkVersion": "6.1.0(23)",
-        "compatibleSdkVersion": "6.0.0(20)",
+        "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
@@ -46,7 +46,7 @@
         "name": "release",
         "signingConfig": "release",
         "targetSdkVersion": "6.1.0(23)",
-        "compatibleSdkVersion": "6.0.0(20)",
+        "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {

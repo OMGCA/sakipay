@@ -154,19 +154,25 @@ final class EarningsCalculator {
     let payDay: Int
     let taxRate: Double
     let calendar: Calendar
+    let holidayCalendar: HolidayCalendar?
+    var dayOverrides: [String: DayOverride]
 
     init(monthlyPay: Double,
          workingDaysPerMonth: Double,
          schedule: WorkSchedule,
          payDay: Int,
          taxRate: Double = 0,
-         calendar: Calendar = .current) {
+         calendar: Calendar = .current,
+         holidayCalendar: HolidayCalendar? = nil,
+         dayOverrides: [String: DayOverride] = [:]) {
         self.monthlyPay = monthlyPay
         self.workingDaysPerMonth = workingDaysPerMonth
         self.schedule = schedule
         self.payDay = payDay
         self.taxRate = taxRate
         self.calendar = calendar
+        self.holidayCalendar = holidayCalendar
+        self.dayOverrides = dayOverrides
     }
 
     var dailyRate: Double {
@@ -192,16 +198,23 @@ final class EarningsCalculator {
                               + calendar.component(.minute, from: date) * 60
                               + calendar.component(.second, from: date))
 
+        // Determine overtime config for today (if any)
+        let ds = dateString(from: date)
+        let isOvertime = dayOverrides[ds]?.dayType == .overtime
+        let multiplier = isOvertime ? (dayOverrides[ds]?.overtimeMultiplier ?? 2.0) : 1.0
+        let effectiveTotalSeconds: Double = totalWorkSeconds
+
         // Not started: before work start (and not in cross-midnight's next-day portion)
         if !schedule.isInWorkWindow(currentMinute) && !schedule.isAfterWork(currentMinute) {
             return TodayEarnings(amount: 0, progress: 0, status: .notStarted,
-                                 elapsedSeconds: 0, totalWorkSeconds: totalWorkSeconds)
+                                 elapsedSeconds: 0, totalWorkSeconds: effectiveTotalSeconds)
         }
 
         // Completed: after work end
         if schedule.isAfterWork(currentMinute) {
-            return TodayEarnings(amount: dailyRate, progress: 1, status: .completed,
-                                 elapsedSeconds: totalWorkSeconds, totalWorkSeconds: totalWorkSeconds)
+            let fullAmount = isOvertime ? secondRate * effectiveTotalSeconds * multiplier : dailyRate
+            return TodayEarnings(amount: fullAmount, progress: 1, status: .completed,
+                                 elapsedSeconds: effectiveTotalSeconds, totalWorkSeconds: effectiveTotalSeconds)
         }
 
         // Check if we're inside a break
@@ -210,26 +223,32 @@ final class EarningsCalculator {
             let breakStartElapsedSec = schedule.elapsedSinceStartSeconds(breakStartSec)
             let priorBreakSec = schedule.elapsedBreakSeconds(before: breakStartSec)
             let elapsedSec = max(0, breakStartElapsedSec - priorBreakSec)
-            let progress = totalWorkSeconds > 0 ? elapsedSec / totalWorkSeconds : 0
-            return TodayEarnings(amount: secondRate * elapsedSec, progress: progress,
-                                 status: .onBreak, elapsedSeconds: elapsedSec, totalWorkSeconds: totalWorkSeconds)
+            let cappedElapsed = min(elapsedSec, effectiveTotalSeconds)
+            let progress = effectiveTotalSeconds > 0 ? cappedElapsed / effectiveTotalSeconds : 0
+            let amount = secondRate * cappedElapsed * multiplier
+            return TodayEarnings(amount: amount, progress: progress,
+                                 status: .onBreak, elapsedSeconds: cappedElapsed,
+                                 totalWorkSeconds: effectiveTotalSeconds)
         }
 
         // Working — use second-level precision
         let nowElapsedSec = schedule.elapsedSinceStartSeconds(currentSec)
         let elapsedBreakSec = schedule.elapsedBreakSeconds(before: currentSec)
         let elapsedSec = max(0, nowElapsedSec - elapsedBreakSec)
-        let progress = totalWorkSeconds > 0 ? elapsedSec / totalWorkSeconds : 0
-        return TodayEarnings(amount: secondRate * elapsedSec, progress: progress,
-                             status: .working, elapsedSeconds: elapsedSec, totalWorkSeconds: totalWorkSeconds)
+        let cappedElapsed = min(elapsedSec, effectiveTotalSeconds)
+        let progress = effectiveTotalSeconds > 0 ? cappedElapsed / effectiveTotalSeconds : 0
+        let amount = secondRate * cappedElapsed * multiplier
+        return TodayEarnings(amount: amount, progress: progress,
+                             status: .working, elapsedSeconds: cappedElapsed,
+                             totalWorkSeconds: effectiveTotalSeconds)
     }
 
     func calculateMonthSummary(at date: Date = Date()) -> MonthSummary {
         let workingDays = countWorkingDaysInMonth(date)
         let elapsedDays = countElapsedWorkingDays(date)
         let monthProgress = workingDays > 0 ? Double(elapsedDays) / Double(workingDays) : 0
-        let monthEarnings = dailyRate * Double(elapsedDays)
-        let totalMonthEarnings = dailyRate * Double(workingDays)
+        let monthEarnings = calculateElapsedMonthEarnings(date)
+        let totalMonthEarnings = calculateTotalMonthEarnings(date)
         let paydayInfo = calculatePayday(from: date)
         let cycleInfo = calculatePaydayCycle(from: date)
 
@@ -249,12 +268,86 @@ final class EarningsCalculator {
 
     // MARK: - Private
 
+    /// Formats a Date as "YYYY-MM-DD" for dictionary lookup.
+    private func dateString(from date: Date) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// Three-tier day-off determination: user override > holiday calendar > weekend check.
     private func isDayOff(_ date: Date) -> Bool {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let month = c.month, let day = c.day else {
+            return false
+        }
+
+        // Tier 1: user override
+        let ds = dateString(from: date)
+        if let override = dayOverrides[ds] {
+            switch override.dayType {
+            case .normal:
+                break // fall through to calendar/weekend check
+            case .holiday:
+                return true
+            case .overtime:
+                return false // overtime days are working days
+            }
+        }
+
+        // Tier 2: Chinese holiday calendar
+        if let hc = holidayCalendar {
+            if hc.isHoliday(month: month, day: day) { return true }
+            if hc.isAdjustedWorkday(month: month, day: day) { return false }
+        }
+
+        // Tier 3: weekend fallback
         let weekday = calendar.component(.weekday, from: date)
         return weekday == 1 || weekday == 7
     }
 
-    private func countWorkingDaysInMonth(_ date: Date) -> Int {
+    /// Returns the per-day earnings for a given date, accounting for overtime.
+    private func dailyEarnings(for date: Date) -> Double {
+        let ds = dateString(from: date)
+        if let override = dayOverrides[ds], override.dayType == .overtime {
+            let multiplier = override.overtimeMultiplier
+            let hours = schedule.totalWorkHours
+            return secondRate * hours * 3600.0 * multiplier
+        }
+        if isDayOff(date) { return 0 }
+        return dailyRate
+    }
+
+    /// Sums the earnings for every elapsed working day in the month (including today if working).
+    private func calculateElapsedMonthEarnings(_ date: Date) -> Double {
+        guard let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else {
+            return 0
+        }
+        let today = calendar.startOfDay(for: date)
+        var total: Double = 0
+        var current = monthStart
+        while current <= today {
+            total += dailyEarnings(for: current)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+        return total
+    }
+
+    /// Sums the earnings for every working day in the entire month.
+    private func calculateTotalMonthEarnings(_ date: Date) -> Double {
+        guard let range = calendar.range(of: .day, in: .month, for: date),
+              let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else {
+            return 0
+        }
+        var total: Double = 0
+        for day in range {
+            guard let dayDate = calendar.date(byAdding: .day, value: day - 1, to: monthStart) else { continue }
+            total += dailyEarnings(for: dayDate)
+        }
+        return total
+    }
+
+    func countWorkingDaysInMonth(_ date: Date) -> Int {
         guard let range = calendar.range(of: .day, in: .month, for: date),
               let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else {
             return 0
@@ -263,8 +356,7 @@ final class EarningsCalculator {
         var count = 0
         for day in range {
             guard let dayDate = calendar.date(byAdding: .day, value: day - 1, to: monthStart) else { continue }
-            let weekday = calendar.component(.weekday, from: dayDate)
-            if weekday != 1 && weekday != 7 { count += 1 }
+            if !isDayOff(dayDate) { count += 1 }
         }
         return count
     }
@@ -279,8 +371,7 @@ final class EarningsCalculator {
         var current = monthStart
 
         while current <= today {
-            let weekday = calendar.component(.weekday, from: current)
-            if weekday != 1 && weekday != 7 { count += 1 }
+            if !isDayOff(current) { count += 1 }
             guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
             current = next
         }

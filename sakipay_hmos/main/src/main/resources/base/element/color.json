@@ -83,6 +83,26 @@
     {
       "name": "input_background",
       "value": "#F9F9F9"
+    },
+    {
+      "name": "calendar_holiday_bg",
+      "value": "#40AF52DE"
+    },
+    {
+      "name": "calendar_adjusted_bg",
+      "value": "#4DFF9F0A"
+    },
+    {
+      "name": "calendar_overtime_bg",
+      "value": "#4DFF9F0A"
+    },
+    {
+      "name": "calendar_user_holiday_bg",
+      "value": "#40AF52DE"
+    },
+    {
+      "name": "calendar_normal_bg",
+      "value": "#26007AFF"
     }
   ]
 }

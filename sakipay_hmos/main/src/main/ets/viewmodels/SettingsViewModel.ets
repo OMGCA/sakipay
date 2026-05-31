@@ -1,5 +1,7 @@
 /* (c) Copyright XiatStudio 2026~2026 */
 import { BreakSegment } from '../models/BreakSegment'
+import { DayOverride, DayType, HolidayCalendarData } from '../models/HolidayCalendar'
+import { HolidayCalendarService } from '../services/HolidayCalendarService'
 import { ConfigData, PreferencesStore } from '../services/PreferencesStore'
 import { Log } from '../services/Log'
 
@@ -29,6 +31,11 @@ export class SettingsViewModel {
   @Trace public breakVersion: number = 0
   @Trace public isLoaded: boolean = false
   @Trace public saveMessage: string = ''
+
+  // Calendar overrides
+  @Trace public dayOverrides: DayOverride[] = []
+  @Trace public useCalibratedWorkDays: boolean = true
+  @Trace public calibratedWorkingDays: number = 0
 
   private store: PreferencesStore = new PreferencesStore()
 
@@ -63,8 +70,93 @@ export class SettingsViewModel {
       this.breakSegments = [defaultBreak]
     }
 
+    // Parse day overrides
+    this.dayOverrides = this.parseDayOverrides(config.dayOverridesJSON)
+
+    this.recalibrateWorkingDays()
+
     this.isLoaded = true
     Log.info('Config loaded')
+  }
+
+  /**
+   * Recomputes the calibrated working day count for the current month,
+   * accounting for the Chinese holiday calendar and any user overrides.
+   */
+  public recalibrateWorkingDays(): void {
+    const hc: HolidayCalendarData | null = HolidayCalendarService.getInstance().currentCalendar()
+    const today: Date = new Date()
+    const year: number = today.getFullYear()
+    const month: number = today.getMonth()
+    const daysInMonth: number = new Date(year, month + 1, 0).getDate()
+
+    // Build override lookup
+    const overrideMap: Map<string, DayOverride> = new Map()
+    for (const ov of this.dayOverrides) {
+      overrideMap.set(ov.dateString, ov)
+    }
+
+    let count: number = 0
+    for (let d: number = 1; d <= daysInMonth; d++) {
+      const ds: string = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      const override: DayOverride | undefined = overrideMap.get(ds)
+
+      // User override: holiday → day off, overtime → working
+      if (override !== undefined) {
+        if (override.dayType === DayType.HOLIDAY) {
+          continue
+        }
+        if (override.dayType === DayType.OVERTIME) {
+          count = count + 1
+          continue
+        }
+      }
+
+      // Holiday calendar check
+      const m: number = month + 1
+      if (hc !== null) {
+        if (hc.isHoliday(m, d)) {
+          continue
+        }
+        if (hc.isAdjustedWorkday(m, d)) {
+          count = count + 1
+          continue
+        }
+      }
+
+      // Weekend fallback
+      const wd: number = new Date(year, month, d).getDay()
+      if (wd !== 0 && wd !== 6) {
+        count = count + 1
+      }
+    }
+
+    this.calibratedWorkingDays = count
+  }
+
+  /**
+   * Adds or updates a day override and recalibrates working days.
+   */
+  public addOrUpdateOverride(override: DayOverride): void {
+    const idx: number = this.dayOverrides.findIndex(
+      (d: DayOverride) => d.dateString === override.dateString
+    )
+    if (idx >= 0) {
+      const updated: DayOverride[] = [...this.dayOverrides]
+      updated[idx] = override
+      this.dayOverrides = updated
+    } else {
+      this.dayOverrides = this.dayOverrides.concat([override])
+    }
+    this.recalibrateWorkingDays()
+  }
+
+  /**
+   * Removes a day override by date string and recalibrates.
+   */
+  public removeOverride(dateString: string): void {
+    this.dayOverrides = this.dayOverrides.filter((d: DayOverride) => d.dateString !== dateString)
+    this.recalibrateWorkingDays()
   }
 
   public async saveConfig(): Promise<boolean> {
@@ -94,7 +186,9 @@ export class SettingsViewModel {
 
     const config: ConfigData = new ConfigData()
     config.monthlyPay = pay
-    config.workingDaysPerMonth = this.workingDays
+    config.workingDaysPerMonth = this.useCalibratedWorkDays
+      ? this.calibratedWorkingDays
+      : this.workingDays
     config.currency = this.currency
     config.taxRate = this.taxRate
     config.payDay = this.payDay
@@ -103,6 +197,7 @@ export class SettingsViewModel {
     config.workEndHour = this.workEndH
     config.workEndMinute = this.workEndM
     config.breaksJSON = JSON.stringify(this.breakSegments)
+    config.dayOverridesJSON = JSON.stringify(this.dayOverrides)
 
     const saved: boolean = await this.store.saveConfig(config)
     if (!saved) {
@@ -244,6 +339,57 @@ export class SettingsViewModel {
       return result
     } catch (err) {
       Log.error(`Failed to parse breaks JSON: ${err}`)
+      return []
+    }
+  }
+
+  /**
+   * Returns the override for a given date string, or null.
+   */
+  public getOverride(dateString: string): DayOverride | null {
+    const found: DayOverride | undefined = this.dayOverrides.find(
+      (d: DayOverride) => d.dateString === dateString
+    )
+    return found !== undefined ? found : null
+  }
+
+  /**
+   * Parses day overrides from a JSON string.
+   */
+  private parseDayOverrides(json: string): DayOverride[] {
+    if (json.length === 0) {
+      return []
+    }
+    try {
+      const arr: object[] = JSON.parse(json) as object[]
+      const result: DayOverride[] = []
+      for (const item of arr) {
+        const obj = item as Record<string, Object>
+        const override: DayOverride = new DayOverride()
+        if (obj.dateString !== undefined) {
+          override.dateString = obj.dateString as string
+        }
+        if (obj.dayType !== undefined) {
+          const dt: string = obj.dayType as string
+          if (dt === DayType.HOLIDAY) {
+            override.dayType = DayType.HOLIDAY
+          } else if (dt === DayType.OVERTIME) {
+            override.dayType = DayType.OVERTIME
+          } else {
+            override.dayType = DayType.NORMAL
+          }
+        }
+        if (obj.overtimeMultiplier !== undefined) {
+          override.overtimeMultiplier = obj.overtimeMultiplier as number
+        }
+        if (obj.customWorkHours !== undefined && obj.customWorkHours !== null) {
+          override.customWorkHours = obj.customWorkHours as number
+        }
+        result.push(override)
+      }
+      return result
+    } catch (err) {
+      Log.error(`Failed to parse dayOverrides JSON: ${err}`)
       return []
     }
   }

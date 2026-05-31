@@ -24,6 +24,12 @@ final class EarningsConfig {
     /// JSON-encoded break segments.
     var breaksJSON: String = ""
 
+    /// JSON-encoded user day overrides (custom workday/holiday/overtime designations).
+    var dayOverridesJSON: String = ""
+
+    /// Whether to auto-calibrate workingDaysPerMonth based on the holiday calendar.
+    var useCalibratedWorkDays: Bool = true
+
     init() {}
 
     var workStartMinutes: Int { workStartHour * 60 + workStartMinute }
@@ -62,13 +68,54 @@ final class EarningsConfig {
     }
 
     var calculator: EarningsCalculator {
-        EarningsCalculator(
+        let hc = HolidayCalendarService.shared.currentCalendar()
+        let effectiveDays: Double = useCalibratedWorkDays
+            ? Double(calibratedWorkingDays)
+            : workingDaysPerMonth
+        return EarningsCalculator(
             monthlyPay: monthlyPay,
+            workingDaysPerMonth: effectiveDays,
+            schedule: workSchedule,
+            payDay: payDay,
+            taxRate: taxRate,
+            holidayCalendar: hc,
+            dayOverrides: dayOverrides,
+        )
+    }
+
+    /// User-designated day overrides, keyed by "YYYY-MM-DD".
+    var dayOverrides: [String: DayOverride] {
+        get {
+            guard !dayOverridesJSON.isEmpty,
+                  let data = dayOverridesJSON.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([DayOverride].self, from: data) else {
+                return [:]
+            }
+            return Dictionary(uniqueKeysWithValues: decoded.map { ($0.dateString, $0) })
+        }
+        set {
+            let array = Array(newValue.values)
+            if let data = try? JSONEncoder().encode(array),
+               let str = String(data: data, encoding: .utf8) {
+                dayOverridesJSON = str
+            }
+        }
+    }
+
+    /// Calibrated working days for the current month, accounting for the holiday calendar.
+    /// Deliberately avoids calling `self.calculator` to prevent infinite recursion.
+    var calibratedWorkingDays: Int {
+        let hc = HolidayCalendarService.shared.currentCalendar()
+        let calc = EarningsCalculator(
+            monthlyPay: 0,
             workingDaysPerMonth: workingDaysPerMonth,
             schedule: workSchedule,
             payDay: payDay,
-            taxRate: taxRate
+            taxRate: taxRate,
+            holidayCalendar: hc,
+            dayOverrides: dayOverrides,
         )
+        return calc.countWorkingDaysInMonth(Date())
     }
 
     var validBreaks: [BreakSegment] {

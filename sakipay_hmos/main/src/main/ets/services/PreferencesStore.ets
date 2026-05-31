@@ -36,6 +36,7 @@ export class PreferencesStore {
       await this.store.put('workEndHour', config.workEndHour)
       await this.store.put('workEndMinute', config.workEndMinute)
       await this.store.put('breaksJSON', config.breaksJSON)
+      await this.store.put('dayOverridesJSON', config.dayOverridesJSON)
       await this.store.flush()
       Log.info('Config saved')
       return true
@@ -61,6 +62,7 @@ export class PreferencesStore {
       config.workEndHour = (await this.store.get('workEndHour', 18)) as number
       config.workEndMinute = (await this.store.get('workEndMinute', 0)) as number
       config.breaksJSON = (await this.store.get('breaksJSON', '')) as string
+      config.dayOverridesJSON = (await this.store.get('dayOverridesJSON', '')) as string
     } catch (err) {
       Log.error(`loadConfig failed: ${err}`)
     }
@@ -159,4 +161,5 @@ export class ConfigData {
   public workEndHour: number = 18
   public workEndMinute: number = 0
   public breaksJSON: string = ''
+  public dayOverridesJSON: string = ''
 }

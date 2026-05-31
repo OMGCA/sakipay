@@ -3,6 +3,7 @@ import {
   EarningsCalculator, WorkStatus, TodayEarnings, MonthSummary, BreakScheduleEntry
 } from '../models/EarningsCalculator'
 import { BreakSegment } from '../models/BreakSegment'
+import { HolidayCalendarData, DayOverride } from '../models/HolidayCalendar'
 import { PreferencesStore } from '../services/PreferencesStore'
 import { Log } from '../services/Log'
 
@@ -42,7 +43,9 @@ export class DashboardViewModel {
   public configure(
     monthlyPay: number, workingDays: number, currency: string, taxRate: number, payDay: number,
     workStartH: number, workStartM: number, workEndH: number, workEndM: number,
-    breaks: BreakSegment[]
+    breaks: BreakSegment[],
+    holidayCalendar: HolidayCalendarData | null = null,
+    dayOverrides: DayOverride[] = []
   ): void {
     this.currency = currency
     this.isConfigured = monthlyPay > 0
@@ -53,6 +56,13 @@ export class DashboardViewModel {
     this.calculator.payDay = payDay
     this.calculator.schedule.workStartMinutes = workStartH * 60 + workStartM
     this.calculator.schedule.workEndMinutes = workEndH * 60 + workEndM
+    this.calculator.holidayCalendar = holidayCalendar
+    const overrideMap: Map<string, DayOverride> = new Map()
+    for (const ov of dayOverrides) {
+      overrideMap.set(ov.dateString, ov)
+    }
+    this.calculator.dayOverrides = overrideMap
+
     const mapped: BreakScheduleEntry[] = []
     for (const b of breaks) {
       if (b.isValid) {

@@ -71,6 +71,11 @@ struct SettingsView: View {
     @State private var showSavedToast = false
     @State private var showPrunedToast = false
     @State private var prunedCount = 0
+    @State private var showCalendarSheet = false
+
+    // Calendar overrides
+    @State private var dayOverrides: [String: DayOverride] = [:]
+    @State private var useCalibratedWorkDays = true
 
     @FocusState private var payFieldFocused: Bool
     @FocusState private var daysFieldFocused: Bool
@@ -87,6 +92,7 @@ struct SettingsView: View {
                 breaksSection
                 taxSection
                 paydaySection
+                calendarSection
                 aboutSection
             }
             .navigationTitle("设置")
@@ -157,11 +163,16 @@ struct SettingsView: View {
             HStack {
                 Text("每月工作天数")
                 Spacer()
-                TextField("21.75", value: $workingDays, format: .number)
-                    .keyboardType(.decimalPad)
-                    .focused($daysFieldFocused)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 80)
+                if useCalibratedWorkDays {
+                    Text("\(calibratedWorkingDays) 天（自动）")
+                        .foregroundStyle(.secondary)
+                } else {
+                    TextField("21.75", value: $workingDays, format: .number)
+                        .keyboardType(.decimalPad)
+                        .focused($daysFieldFocused)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
             }
         }
     }
@@ -324,6 +335,68 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Calendar Section
+
+    private var calendarSection: some View {
+        Section("工作日日历") {
+            Button {
+                showCalendarSheet = true
+            } label: {
+                HStack {
+                    Text("自定义工作日")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text("标记自定义日")
+                        .font(.subheadline)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .sheet(isPresented: $showCalendarSheet) {
+                CalendarSheetView(
+                    dayOverrides: $dayOverrides,
+                    holidayCalendar: HolidayCalendarService.shared.currentCalendar(),
+                    onSaved: { saveConfig() }
+                )
+                .presentationDetents([.fraction(0.6)])
+                .presentationDragIndicator(.visible)
+            }
+
+            Toggle("自动校准每月工作天数", isOn: $useCalibratedWorkDays)
+
+            if useCalibratedWorkDays {
+                HStack {
+                    Text("本月实际工作日")
+                    Spacer()
+                    Text("\(calibratedWorkingDays) 天")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var calibratedWorkingDays: Int {
+        let ws = workMinutes(workStartH, workStartM)
+        let we = workMinutes(workEndH, workEndM)
+        let schedule = WorkSchedule(
+            workStartMinutes: ws,
+            workEndMinutes: we,
+            breaks: breakSegments.filter(\.isValid).map(\.asBreakSchedule)
+        )
+        let hc = HolidayCalendarService.shared.currentCalendar()
+        let calc = EarningsCalculator(
+            monthlyPay: 0,
+            workingDaysPerMonth: workingDays,
+            schedule: schedule,
+            payDay: payDay,
+            taxRate: taxRate,
+            holidayCalendar: hc,
+            dayOverrides: dayOverrides
+        )
+        return calc.countWorkingDaysInMonth(Date())
+    }
+
     private var aboutSection: some View {
         Section("关于") {
             Button {
@@ -359,7 +432,7 @@ struct SettingsView: View {
             HStack {
                 Text("版本")
                 Spacer()
-                Text("0.0.3")
+                Text("0.1")
             }
         }
     }
@@ -416,9 +489,11 @@ struct SettingsView: View {
         payDay = c.payDay
         taxRate = c.taxRate
         workingDays = c.workingDaysPerMonth
+        useCalibratedWorkDays = c.useCalibratedWorkDays
         workStartH = c.workStartHour; workStartM = c.workStartMinute
         workEndH = c.workEndHour; workEndM = c.workEndMinute
         breakSegments = c.breaks
+        dayOverrides = c.dayOverrides
     }
 
     private func saveConfig() {
@@ -431,19 +506,22 @@ struct SettingsView: View {
 
         // Snapshot breakSegments to avoid mutation conflicts
         let validBreaks = breakSegments.filter(\.isValid)
+        let effectiveWorkingDays = useCalibratedWorkDays ? Double(calibratedWorkingDays) : workingDays
 
         if let existing = config {
             existing.monthlyPay = pay
             existing.currency = currency
             existing.payDay = payDay
             existing.taxRate = taxRate
-            existing.workingDaysPerMonth = workingDays
+            existing.workingDaysPerMonth = effectiveWorkingDays
             existing.workStartHour = workStartH
             existing.workStartMinute = workStartM
             existing.workEndHour = workEndH
             existing.workEndMinute = workEndM
             // Encode breaks to JSON safely — crash here means encoding failed
             existing.breaks = validBreaks
+            existing.dayOverrides = dayOverrides
+            existing.useCalibratedWorkDays = useCalibratedWorkDays
             existing.updatedAt = Date()
         } else {
             let new = EarningsConfig()
@@ -451,12 +529,14 @@ struct SettingsView: View {
             new.currency = currency
             new.payDay = payDay
             new.taxRate = taxRate
-            new.workingDaysPerMonth = workingDays
+            new.workingDaysPerMonth = effectiveWorkingDays
             new.workStartHour = workStartH
             new.workStartMinute = workStartM
             new.workEndHour = workEndH
             new.workEndMinute = workEndM
             new.breaks = validBreaks
+            new.dayOverrides = dayOverrides
+            new.useCalibratedWorkDays = useCalibratedWorkDays
             modelContext.insert(new)
         }
 
@@ -471,6 +551,8 @@ struct SettingsView: View {
 
         if let c = config {
             vm.configure(with: c)
+            // Re-sync dayOverrides from saved config
+            dayOverrides = c.dayOverrides
         }
 
         showSavedToast = true

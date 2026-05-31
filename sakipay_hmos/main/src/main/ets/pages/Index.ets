@@ -4,19 +4,25 @@ import { SettingsViewModel } from '../viewmodels/SettingsViewModel'
 import { DashboardPage } from '../views/DashboardPage'
 import { SettingsPage } from '../views/SettingsPage'
 import { BreakSegment } from '../models/BreakSegment'
+import { DayOverride, DayType, HolidayCalendarData } from '../models/HolidayCalendar'
+import { HolidayCalendarService } from '../services/HolidayCalendarService'
 import { Log } from '../services/Log'
 import { PreferencesStore, ConfigData } from '../services/PreferencesStore'
 import { EarningsCalculator, BreakScheduleEntry } from '../models/EarningsCalculator'
 import { formProvider, formBindingData, formInfo } from '@kit.FormKit'
 import { HdsTabs, HdsTabsController } from '@kit.UIDesignKit'
+import { CalendarSheetPage } from '../views/CalendarSheetPage'
 
 @Entry
 @ComponentV2
 struct Index {
   @Local public dashboardVM: DashboardViewModel = new DashboardViewModel()
   @Local public settingsVM: SettingsViewModel = new SettingsViewModel()
-  private tabsController: HdsTabsController = new HdsTabsController()
+  @Local private tabsController: HdsTabsController = new HdsTabsController()
   @Local private activeIndex: number = 0
+  @Local private showCalendar: boolean = false
+  @Local private calendarPopupOpacity: number = 0
+  @Local private holidayCalendar: HolidayCalendarData | null = null
 
   public aboutToAppear(): void {
     let ctx: Context | undefined = this.getUIContext().getHostContext()
@@ -25,6 +31,14 @@ struct Index {
     }
     if (ctx !== undefined) {
       const appCtx: Context = ctx
+
+      // Load holiday calendar (bundled data)
+      try {
+        HolidayCalendarService.getInstance().loadBundledCalendars(appCtx)
+      } catch (e) {
+        Log.error(`Failed to load holiday calendar: ${e}`)
+      }
+
       this.settingsVM.initialise(appCtx)
         .then((): Promise<void> => {
           return this.settingsVM.loadConfig()
@@ -46,10 +60,29 @@ struct Index {
     } else {
       Log.error('Failed to get context — config will not be loaded or saved')
     }
+    this.holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
+  }
+
+  private onShowCalendar(): void {
+    this.showCalendar = true
+    this.calendarPopupOpacity = 0
+    animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
+      this.calendarPopupOpacity = 1
+    })
+  }
+
+  private onDismissCalendar(): void {
+    animateTo({ duration: 200, curve: Curve.EaseIn }, () => {
+      this.calendarPopupOpacity = 0
+    })
+    setTimeout(() => {
+      this.showCalendar = false
+    }, 210)
   }
 
   public build(): void {
-    HdsTabs({ controller: this.tabsController }) {
+    Stack() {
+      HdsTabs({ controller: this.tabsController }) {
       TabContent() {
         DashboardPage({
           viewModel: this.dashboardVM,
@@ -66,6 +99,12 @@ struct Index {
           onSaved: (): void => {
             this.applyConfigToDashboard()
             this.tabsController.changeIndex(0)
+          },
+          onCalendarSaved: (): void => {
+            this.applyConfigToDashboard()
+          },
+          onShowCalendar: (): void => {
+            this.onShowCalendar()
           }
         })
       }
@@ -89,6 +128,51 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.page_background'))
+
+      // Calendar popup overlay (above tab bar)
+      if (this.showCalendar) {
+        Stack() {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+            .opacity(this.calendarPopupOpacity)
+            .onClick(() => { this.onDismissCalendar() })
+
+          Column() {
+            CalendarSheetPage({
+              holidayCalendar: this.holidayCalendar,
+              dayOverrides: this.settingsVM.dayOverrides,
+              onOverrideSaved: (override: DayOverride): void => {
+                this.settingsVM.addOrUpdateOverride(override)
+                this.settingsVM.saveConfig().then((success: boolean) => {
+                  if (success) {
+                    this.applyConfigToDashboard()
+                  }
+                })
+              },
+              onOverrideReset: (dateString: string): void => {
+                this.settingsVM.removeOverride(dateString)
+                this.settingsVM.saveConfig().then((success: boolean) => {
+                  if (success) {
+                    this.applyConfigToDashboard()
+                  }
+                })
+              },
+              onClose: (): void => { this.onDismissCalendar() }
+            })
+          }
+          .width('92%')
+          .margin({ top: 80, bottom: 40 })
+          .opacity(this.calendarPopupOpacity)
+          .scale({ x: this.calendarPopupOpacity * 0.05 + 0.95, y: this.calendarPopupOpacity * 0.05 + 0.95 })
+        }
+        .width('100%')
+        .height('100%')
+        .position({ x: 0, y: 0 })
+        .zIndex(1000)
+      }
+    }
   }
 
   @Builder
@@ -127,9 +211,14 @@ struct Index {
 
   private applyConfigToDashboard(): void {
     const breaks: BreakSegment[] = this.settingsVM.breakSegments
+    const holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
+    const overrides: DayOverride[] = this.settingsVM.dayOverrides
+    const effectiveWorkingDays: number = this.settingsVM.useCalibratedWorkDays
+      ? this.settingsVM.calibratedWorkingDays
+      : this.settingsVM.workingDays
     this.dashboardVM.configure(
       parseFloat(this.settingsVM.monthlyPayText) || 0,
-      this.settingsVM.workingDays,
+      effectiveWorkingDays,
       this.settingsVM.currency,
       this.settingsVM.taxRate,
       this.settingsVM.payDay,
@@ -137,7 +226,9 @@ struct Index {
       this.settingsVM.workStartM,
       this.settingsVM.workEndH,
       this.settingsVM.workEndM,
-      breaks
+      breaks,
+      holidayCalendar,
+      overrides
     )
   }
 
@@ -170,6 +261,18 @@ struct Index {
         calc.schedule.workStartMinutes = config.workStartHour * 60 + config.workStartMinute
         calc.schedule.workEndMinutes = config.workEndHour * 60 + config.workEndMinute
         calc.schedule.breaks = this.parseBreaksForWidget(config.breaksJSON)
+
+        // Load holiday calendar
+        try {
+          HolidayCalendarService.getInstance().loadBundledCalendars(ctx)
+          calc.holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
+        } catch (e) {
+          // Calendar unavailable — calculator falls back to weekend check
+        }
+
+        // Load day overrides
+        this.loadDayOverridesForWidget(calc, config.dayOverridesJSON)
+
         const today = calc.calculateTodayEarnings()
         amount = today.amount.toFixed(2)
         progress = today.progress
@@ -189,6 +292,43 @@ struct Index {
       }
     } catch (err) {
       Log.error(`Widget refresh failed: ${err}`)
+    }
+  }
+
+  private loadDayOverridesForWidget(calc: EarningsCalculator, dayOverridesJSON: string): void {
+    if (dayOverridesJSON.length === 0) {
+      return
+    }
+    try {
+      const arr: object[] = JSON.parse(dayOverridesJSON) as object[]
+      const overrides: Map<string, DayOverride> = new Map()
+      for (const item of arr) {
+        const obj: Record<string, Object> = item as Record<string, Object>
+        const override: DayOverride = new DayOverride()
+        if (obj.dateString !== undefined) {
+          override.dateString = obj.dateString as string
+        }
+        if (obj.dayType !== undefined) {
+          const dt: string = obj.dayType as string
+          if (dt === DayType.HOLIDAY) {
+            override.dayType = DayType.HOLIDAY
+          } else if (dt === DayType.OVERTIME) {
+            override.dayType = DayType.OVERTIME
+          } else {
+            override.dayType = DayType.NORMAL
+          }
+        }
+        if (obj.overtimeMultiplier !== undefined) {
+          override.overtimeMultiplier = obj.overtimeMultiplier as number
+        }
+        if (obj.customWorkHours !== undefined && obj.customWorkHours !== null) {
+          override.customWorkHours = obj.customWorkHours as number
+        }
+        overrides.set(override.dateString, override)
+      }
+      calc.dayOverrides = overrides
+    } catch (e) {
+      Log.error(`Widget parse day overrides: ${e}`)
     }
   }
 

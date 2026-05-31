@@ -40,7 +40,8 @@ final class DashboardViewModel: ObservableObject {
             taxRate: config.taxRate,
             workStartMinutes: config.workStartMinutes,
             workEndMinutes: config.workEndMinutes,
-            breaks: config.validBreaks
+            breaks: config.validBreaks,
+            dayOverridesJSON: config.dayOverridesJSON
         )
         refresh()
         startTimer()
