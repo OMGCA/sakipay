@@ -1,9 +1,12 @@
 /* (c) Copyright XiatStudio 2026~2026 */
 import { SettingsViewModel } from '../viewmodels/SettingsViewModel'
 import { BreakSegment } from '../models/BreakSegment'
+import { DayOverride, HolidayCalendarData } from '../models/HolidayCalendar'
+import { HolidayCalendarService } from '../services/HolidayCalendarService'
 import { IconFont, IconFontView } from '../services/IconFont'
 import { Vibrator } from '@kit.SensorServiceKit'
 import { common, Want } from '@kit.AbilityKit'
+import { CalendarSheetPage } from './CalendarSheetPage'
 
 type SaveCallback = () => void
 
@@ -14,9 +17,12 @@ export struct SettingsPage {
 
   private hourOptions: string[] = []
   private minuteOptions: string[] = []
+  private paydayOptions: string[] = []
 
   // Force ForEach re-render when breaks are added/removed (bypasses V2 @Param tracing)
   @Local private breakListKey: number = 0
+  @Local private showCalendar: boolean = false
+  @Local private holidayCalendar: HolidayCalendarData | null = null
 
   /**
    * Trigger a short haptic pulse on picker value change.
@@ -34,6 +40,13 @@ export struct SettingsPage {
     if (!this.viewModel.isLoaded) {
       this.viewModel.loadConfig()
     }
+    // Load holiday calendar
+    const ctx: common.UIAbilityContext | undefined = this.getUIContext().getHostContext() as
+      common.UIAbilityContext | undefined
+    if (ctx !== undefined) {
+      HolidayCalendarService.getInstance().loadBundledCalendars(ctx)
+    }
+    this.holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
   }
 
   public build(): void {
@@ -60,12 +73,13 @@ export struct SettingsPage {
 
       // Scrollable form
       Scroll() {
-        Column({ space: 14 }) {
+        Column({ space: 10 }) {
           this.salarySection()
           this.workHoursSection()
           this.breaksSection()
           this.taxSection()
           this.paydaySection()
+          this.calendarSection()
           this.aboutSection()
           Blank().height(80)
         }
@@ -84,6 +98,29 @@ export struct SettingsPage {
           .borderRadius(20)
           .backgroundColor('#CC000000')
           .margin({ bottom: 24 })
+      }
+
+      // Calendar overlay
+      if (this.showCalendar) {
+        Stack() {
+          CalendarSheetPage({
+            holidayCalendar: this.holidayCalendar,
+            dayOverrides: this.viewModel.dayOverrides,
+            onOverrideSaved: (override: DayOverride): void => {
+              this.viewModel.addOrUpdateOverride(override)
+            },
+            onOverrideReset: (dateString: string): void => {
+              this.viewModel.removeOverride(dateString)
+            },
+            onClose: (): void => {
+              this.showCalendar = false
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .position({ x: 0, y: 0 })
+        .zIndex(100)
       }
     }
     .width('100%')
@@ -108,7 +145,7 @@ export struct SettingsPage {
   private salarySection(): void {
     this.sectionTitle('月薪')
 
-    Column({ space: 12 }) {
+    Column({ space: 8 }) {
       Row({ space: 8 }) {
         TextPicker({ range: this.currencyOptions(), selected: this.currencyOptions().indexOf(this.viewModel.currency) })
           .onChange((value: string | string[], index: number | number[]) => {
@@ -117,6 +154,13 @@ export struct SettingsPage {
           })
           .width(56)
           .height(80)
+          .defaultPickerItemHeight(42)
+          .canLoop(false)
+          .divider(null)
+          .gradientHeight(36)
+          .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '13fp', weight: FontWeight.Regular } })
+          .textStyle({ color: $r('app.color.text_secondary'), font: { size: '15fp', weight: FontWeight.Regular } })
+          .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '18fp', weight: FontWeight.Medium } })
 
         TextInput({ text: this.viewModel.monthlyPayText, placeholder: '0.00' })
           .type(InputType.Normal)
@@ -150,7 +194,7 @@ export struct SettingsPage {
       .width('100%')
     }
     .width('100%')
-    .padding(16)
+    .padding(12)
     .borderRadius(14)
     .backgroundColor($r('app.color.glass_overlay'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
@@ -164,27 +208,46 @@ export struct SettingsPage {
   private workHoursSection(): void {
     this.sectionTitle('工作时间')
 
-    Column({ space: 12 }) {
-      this.timeWheelRow('上班', this.viewModel.workStartH, this.viewModel.workStartM,
+    Column({ space: 0 }) {
+      // 上班
+      Text('上班')
+        .fontSize(13)
+        .fontColor($r('app.color.text_tertiary'))
+        .padding({ left: 4, bottom: 4 })
+        .width('100%')
+      this.timeWheelStrip(this.viewModel.workStartH, this.viewModel.workStartM,
         (h: number) => { this.viewModel.workStartH = h; this.viewModel.pruneInvalidBreaks() },
         (m: number) => { this.viewModel.workStartM = m; this.viewModel.pruneInvalidBreaks() }
       )
-      this.timeWheelRow('下班', this.viewModel.workEndH, this.viewModel.workEndM,
+
+      Divider().strokeWidth(0.5).color($r('app.color.progress_track'))
+        .margin({ top: 8, bottom: 8 })
+
+      // 下班
+      Text('下班')
+        .fontSize(13)
+        .fontColor($r('app.color.text_tertiary'))
+        .padding({ left: 4, bottom: 4 })
+        .width('100%')
+      this.timeWheelStrip(this.viewModel.workEndH, this.viewModel.workEndM,
         (h: number) => { this.viewModel.workEndH = h; this.viewModel.pruneInvalidBreaks() },
         (m: number) => { this.viewModel.workEndM = m; this.viewModel.pruneInvalidBreaks() }
       )
 
       Divider().strokeWidth(0.5).color($r('app.color.progress_track'))
+        .margin({ top: 8, bottom: 10 })
 
+      // 每日工时
       Row() {
         Text('每日工时').fontSize(14)
         Blank()
         Text(this.viewModel.formattedWorkHours).fontSize(14).fontColor($r('app.color.text_secondary'))
       }
       .width('100%')
+      .padding({ top: 2, bottom: 2 })
     }
     .width('100%')
-    .padding(16)
+    .padding(12)
     .borderRadius(14)
     .backgroundColor($r('app.color.glass_overlay'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
@@ -192,27 +255,32 @@ export struct SettingsPage {
     .border({ width: 0.5, color: $r('app.color.glass_border') })
   }
 
+  /**
+   * Time-picker pair (hour : minute) without a label, centred for embedding in a parent layout.
+   */
   @Builder
-  private timeWheelRow(
-    label: string, hour: number, minute: number,
+  private timeWheelStrip(
+    hour: number, minute: number,
     onHourChange: (h: number) => void, onMinuteChange: (m: number) => void
   ): void {
     Row({ space: 4 }) {
-      Text(label).fontSize(14).width(56)
-
       TextPicker({ range: this.hourOptions, selected: hour })
         .onChange((value: string | string[], index: number | number[]) => {
           this.hapticTick()
           const h: number = parseInt(value as string)
           if (!isNaN(h)) { onHourChange(h) }
         })
-        .width(44)
-        .height(44)
-        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '12fp', weight: FontWeight.Regular } })
-        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '14fp', weight: FontWeight.Regular } })
-        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '15fp', weight: FontWeight.Medium } })
+        .width(48)
+        .height(80)
+        .defaultPickerItemHeight(42)
+        .canLoop(false)
+        .divider(null)
+        .gradientHeight(36)
+        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '13fp', weight: FontWeight.Regular } })
+        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '15fp', weight: FontWeight.Regular } })
+        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '18fp', weight: FontWeight.Medium } })
 
-      Text(':').fontSize(16).fontWeight(FontWeight.Medium)
+      Text(':').fontSize(18).fontWeight(FontWeight.Medium)
 
       TextPicker({ range: this.minuteOptions, selected: this.getMinuteIndex(minute) })
         .onChange((value: string | string[], index: number | number[]) => {
@@ -220,11 +288,15 @@ export struct SettingsPage {
           const m: number = parseInt(value as string)
           if (!isNaN(m)) { onMinuteChange(m) }
         })
-        .width(44)
-        .height(44)
-        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '12fp', weight: FontWeight.Regular } })
-        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '14fp', weight: FontWeight.Regular } })
-        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '15fp', weight: FontWeight.Medium } })
+        .width(48)
+        .height(80)
+        .defaultPickerItemHeight(42)
+        .canLoop(false)
+        .divider(null)
+        .gradientHeight(36)
+        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '13fp', weight: FontWeight.Regular } })
+        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '15fp', weight: FontWeight.Regular } })
+        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '18fp', weight: FontWeight.Medium } })
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)
@@ -236,12 +308,13 @@ export struct SettingsPage {
   private breaksSection(): void {
     this.sectionTitle('休息时段（不计薪）')
 
-    Column({ space: 10 }) {
+    Column({ space: 0 }) {
       ForEach(this.viewModel.breakSegments, (seg: BreakSegment, index: number) => {
         this.breakSegmentItem(seg, index)
       })
 
       Button('+ 添加休息时段')
+        .margin({ top: 4 })
         .onClick(() => {
           this.viewModel.addBreak()
           this.breakListKey++
@@ -251,7 +324,7 @@ export struct SettingsPage {
         .height(36)
     }
     .width('100%')
-    .padding(16)
+    .padding(12)
     .borderRadius(14)
     .backgroundColor($r('app.color.glass_overlay'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
@@ -261,66 +334,91 @@ export struct SettingsPage {
 
   @Builder
   private breakSegmentItem(seg: BreakSegment, index: number): void {
-    Column({ space: 8 }) {
-      Row() {
-        Text(`时段 ${index + 1}`).fontSize(13).fontWeight(FontWeight.Medium).fontColor($r('app.color.text_primary'))
-        Blank()
-        Button() {
-          Text('−')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Color.White)
+    Column() {
+      Column({ space: 4 }) {
+        // Header row
+        Row() {
+          Text(`时段 ${index + 1}`)
+            .fontSize(12)
+            .fontColor($r('app.color.text_secondary'))
+          Blank()
+          Button() {
+            Text('−')
+              .fontSize(15)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(Color.White)
+          }
+          .onClick(() => {
+            this.viewModel.removeBreak(seg.id)
+            this.breakListKey++
+          })
+          .width(22)
+          .height(22)
+          .borderRadius(11)
+          .backgroundColor('#E53E3E')
         }
-        .onClick(() => {
-          this.viewModel.removeBreak(seg.id)
-          this.breakListKey++
-        })
-        .width(24)
-        .height(24)
-        .borderRadius(12)
-        .backgroundColor('#E53E3E')
+        .width('100%')
+
+        // Start and end pickers side by side — same layout as iOS
+        Row({ space: 4 }) {
+          // Start
+          Column({ space: 2 }) {
+            Text('开始').fontSize(10).fontColor($r('app.color.text_tertiary'))
+            this.breakTimeStrip(seg.startHour, seg.startMinute,
+              (h: number) => { seg.startHour = h; this.viewModel.onBreakChanged() },
+              (m: number) => { seg.startMinute = m; this.viewModel.onBreakChanged() }
+            )
+          }
+
+          Text('—').fontSize(12).fontColor($r('app.color.text_tertiary')).margin({ top: 6 })
+
+          // End
+          Column({ space: 2 }) {
+            Text('结束').fontSize(10).fontColor($r('app.color.text_tertiary'))
+            this.breakTimeStrip(seg.endHour, seg.endMinute,
+              (h: number) => { seg.endHour = h; this.viewModel.onBreakChanged() },
+              (m: number) => { seg.endMinute = m; this.viewModel.onBreakChanged() }
+            )
+          }
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
       }
       .width('100%')
+      .padding({ top: 6, bottom: 4, left: 4, right: 4 })
 
-      // Start time — horizontal, same as work time picker
-      this.breakTimeRow('开始', seg.startHour, seg.startMinute,
-        (h: number) => { seg.startHour = h; this.viewModel.onBreakChanged() },
-        (m: number) => { seg.startMinute = m; this.viewModel.onBreakChanged() }
-      )
-
-      // End time — horizontal, same as work time picker
-      this.breakTimeRow('结束', seg.endHour, seg.endMinute,
-        (h: number) => { seg.endHour = h; this.viewModel.onBreakChanged() },
-        (m: number) => { seg.endMinute = m; this.viewModel.onBreakChanged() }
-      )
+      Divider().strokeWidth(0.5).color($r('app.color.progress_track'))
     }
     .width('100%')
-    .padding(10)
-    .borderRadius(10)
-    .backgroundColor($r('app.color.page_background'))
   }
 
+  /**
+   * Compact time-picker pair for break segments — narrower than the work-hours variant
+   * so two can sit side by side inside a segment card.
+   */
   @Builder
-  private breakTimeRow(
-    label: string, hour: number, minute: number,
+  private breakTimeStrip(
+    hour: number, minute: number,
     onHourChange: (h: number) => void, onMinuteChange: (m: number) => void
   ): void {
-    Row({ space: 4 }) {
-      Text(label).fontSize(11).width(40)
-
+    Row({ space: 2 }) {
       TextPicker({ range: this.hourOptions, selected: hour })
         .onChange((value: string | string[], index: number | number[]) => {
           this.hapticTick()
           const h: number = parseInt(value as string)
           if (!isNaN(h)) { onHourChange(h) }
         })
-        .width(40)
-        .height(36)
-        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '10fp', weight: FontWeight.Regular } })
-        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '12fp', weight: FontWeight.Regular } })
-        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '13fp', weight: FontWeight.Medium } })
+        .width(42)
+        .height(68)
+        .defaultPickerItemHeight(38)
+        .canLoop(false)
+        .divider(null)
+        .gradientHeight(30)
+        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '11fp', weight: FontWeight.Regular } })
+        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '13fp', weight: FontWeight.Regular } })
+        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '16fp', weight: FontWeight.Medium } })
 
-      Text(':').fontSize(14).fontWeight(FontWeight.Medium)
+      Text(':').fontSize(16).fontWeight(FontWeight.Medium)
 
       TextPicker({ range: this.minuteOptions, selected: this.getMinuteIndex(minute) })
         .onChange((value: string | string[], index: number | number[]) => {
@@ -328,13 +426,16 @@ export struct SettingsPage {
           const m: number = parseInt(value as string)
           if (!isNaN(m)) { onMinuteChange(m) }
         })
-        .width(40)
-        .height(36)
-        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '10fp', weight: FontWeight.Regular } })
-        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '12fp', weight: FontWeight.Regular } })
-        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '13fp', weight: FontWeight.Medium } })
+        .width(42)
+        .height(68)
+        .defaultPickerItemHeight(38)
+        .canLoop(false)
+        .divider(null)
+        .gradientHeight(30)
+        .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '11fp', weight: FontWeight.Regular } })
+        .textStyle({ color: $r('app.color.text_secondary'), font: { size: '13fp', weight: FontWeight.Regular } })
+        .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '16fp', weight: FontWeight.Medium } })
     }
-    .width('100%')
     .justifyContent(FlexAlign.Center)
   }
 
@@ -344,7 +445,7 @@ export struct SettingsPage {
   private taxSection(): void {
     this.sectionTitle('个税（可选）')
 
-    Column({ space: 10 }) {
+    Column({ space: 6 }) {
       Row() {
         Text('税率').fontSize(14)
         Blank()
@@ -367,7 +468,7 @@ export struct SettingsPage {
       }
     }
     .width('100%')
-    .padding(16)
+    .padding(12)
     .borderRadius(14)
     .backgroundColor($r('app.color.glass_overlay'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
@@ -381,31 +482,99 @@ export struct SettingsPage {
   private paydaySection(): void {
     this.sectionTitle('发薪日')
 
-    Column({ space: 8 }) {
+    Column({ space: 0 }) {
       Row() {
         Text('每月几号').fontSize(14)
         Blank()
-        TextPicker({ range: this.buildDayOptions(), selected: this.viewModel.payDay - 1 })
-          .onChange((value: string | string[], index: number | number[]) => {
-            this.hapticTick()
-            const d: number = parseInt((value as string).replace('日', ''))
-            if (!isNaN(d)) { this.viewModel.payDay = d }
-          })
-          .width(56)
-          .height(44)
-          .disappearTextStyle({ color: $r('app.color.text_tertiary'), font: { size: '12fp', weight: FontWeight.Regular } })
-          .textStyle({ color: $r('app.color.text_secondary'), font: { size: '14fp', weight: FontWeight.Regular } })
-          .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '15fp', weight: FontWeight.Medium } })
+        Text(`${this.viewModel.payDay}日`)
+          .fontSize(14)
+          .fontColor($r('app.color.accent_blue'))
+          .bindMenu(this.paydayMenuBuilder)
       }
       .width('100%')
     }
     .width('100%')
-    .padding(16)
+    .padding(12)
     .borderRadius(14)
     .backgroundColor($r('app.color.glass_overlay'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
     .shadow({ radius: 8, color: $r('app.color.card_shadow'), offsetX: 0, offsetY: 2 })
     .border({ width: 0.5, color: $r('app.color.glass_border') })
+  }
+
+  @Builder
+  private paydayMenuBuilder(): void {
+    Menu() {
+      ForEach(this.paydayOptions, (item: string, index: number) => {
+        MenuItem({ content: item })
+          .onClick(() => {
+            this.viewModel.payDay = index + 1
+          })
+      })
+    }
+  }
+
+  @Builder
+  private calendarSection(): void {
+    this.sectionTitle('工作日日历')
+
+    Column({ space: 10 }) {
+      // Open calendar page
+      Row() {
+        Text('自定义工作日')
+          .fontSize(14)
+          .fontColor($r('app.color.accent_blue'))
+        Blank()
+        Text(`${this.viewModel.dayOverrides.length} 天已标记`)
+          .fontSize(12)
+          .fontColor($r('app.color.text_secondary'))
+        IconFontView({ code: IconFont.CHEVRON_RIGHT, iconSize: 12, iconColor: $r('app.color.text_secondary') })
+      }
+      .width('100%')
+      .onClick(() => {
+        this.openCalendarPage()
+      })
+
+      Divider().strokeWidth(0.5).color($r('app.color.progress_track'))
+
+      // Auto-calibrate toggle
+      Row() {
+        Text('自动校准每月工作天数')
+          .fontSize(14)
+          .fontColor($r('app.color.text_primary'))
+        Blank()
+        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.useCalibratedWorkDays })
+          .onChange((value: boolean) => {
+            this.viewModel.useCalibratedWorkDays = value
+          })
+      }
+      .width('100%')
+
+      if (this.viewModel.useCalibratedWorkDays) {
+        Divider().strokeWidth(0.5).color($r('app.color.progress_track'))
+
+        Row() {
+          Text('本月实际工作日')
+            .fontSize(14)
+          Blank()
+          Text(`${this.viewModel.calibratedWorkingDays} 天`)
+            .fontSize(14)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .padding(12)
+    .borderRadius(14)
+    .backgroundColor($r('app.color.glass_overlay'))
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
+    .shadow({ radius: 8, color: $r('app.color.card_shadow'), offsetX: 0, offsetY: 2 })
+    .border({ width: 0.5, color: $r('app.color.glass_border') })
+  }
+
+  private openCalendarPage(): void {
+    this.showCalendar = true
   }
 
   @Builder
@@ -440,12 +609,12 @@ export struct SettingsPage {
       Row() {
         Text('版本').fontSize(14)
         Blank()
-        Text('0.0.3').fontSize(14)
+        Text('0.1').fontSize(14)
       }
       .width('100%')
     }
     .width('100%')
-    .padding(16)
+    .padding(12)
     .borderRadius(14)
     .backgroundColor($r('app.color.glass_overlay'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
@@ -485,6 +654,13 @@ export struct SettingsPage {
       }
       this.minuteOptions = mins
     }
+    if (this.paydayOptions.length === 0) {
+      const days: string[] = []
+      for (let i: number = 1; i <= 31; i++) {
+        days.push(`${i}日`)
+      }
+      this.paydayOptions = days
+    }
   }
 
   private filterDecimal(value: string): string {
@@ -516,11 +692,4 @@ export struct SettingsPage {
     return Math.max(0, Math.min(11, idx))
   }
 
-  private buildDayOptions(): string[] {
-    const arr: string[] = []
-    for (let i: number = 1; i <= 31; i++) {
-      arr.push(`${i}日`)
-    }
-    return arr
-  }
 }
