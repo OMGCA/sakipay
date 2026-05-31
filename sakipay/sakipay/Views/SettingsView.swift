@@ -153,11 +153,22 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
 
-                TextField("0.00", text: $monthlyPayText)
-                    .keyboardType(.decimalPad)
-                    .focused($payFieldFocused)
-                    .font(.title3)
-                    .fontWeight(.semibold)
+                ZStack(alignment: .leading) {
+                    TextField("0.00", text: $monthlyPayText)
+                        .keyboardType(.decimalPad)
+                        .focused($payFieldFocused)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+
+                    if !payFieldFocused && !monthlyPayText.isEmpty {
+                        Text("••••••••")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.systemBackground))
+                            .onTapGesture { payFieldFocused = true }
+                    }
+                }
             }
 
             HStack {

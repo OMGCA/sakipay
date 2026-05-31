@@ -21,6 +21,7 @@ export struct SettingsPage {
   // Force ForEach re-render when breaks are added/removed (bypasses V2 @Param tracing)
   @Local private breakListKey: number = 0
   @Local private showCalendar: boolean = false
+  @Local private salaryFieldMasked: boolean = true
 
   /**
    * Trigger a short haptic pulse on picker value change.
@@ -132,14 +133,27 @@ export struct SettingsPage {
           .textStyle({ color: $r('app.color.text_secondary'), font: { size: '15fp', weight: FontWeight.Regular } })
           .selectedTextStyle({ color: $r('app.color.text_primary'), font: { size: '18fp', weight: FontWeight.Medium } })
 
-        TextInput({ text: this.viewModel.monthlyPayText, placeholder: '0.00' })
-          .type(InputType.Normal)
-          .fontSize(22)
-          .fontWeight(FontWeight.Bold)
-          .layoutWeight(1)
-          .onChange((value: string) => {
-            this.viewModel.monthlyPayText = this.filterDecimal(value)
-          })
+        if (this.salaryFieldMasked && this.viewModel.monthlyPayText.length > 0) {
+          Text('••••••••')
+            .fontSize(22)
+            .fontWeight(FontWeight.Bold)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.salaryFieldMasked = false
+            })
+        } else {
+          TextInput({ text: this.viewModel.monthlyPayText, placeholder: '0.00' })
+            .type(InputType.Normal)
+            .fontSize(22)
+            .fontWeight(FontWeight.Bold)
+            .layoutWeight(1)
+            .onChange((value: string) => {
+              this.viewModel.monthlyPayText = this.filterDecimal(value)
+            })
+            .onBlur(() => {
+              this.salaryFieldMasked = true
+            })
+        }
       }
       .width('100%')
 
