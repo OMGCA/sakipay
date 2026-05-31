@@ -2,9 +2,9 @@
   "app": {
     "bundleName": "com.xiatstudio.sakipay",
     "vendor": "example",
-    "versionCode": 312794275,
-    "versionName": "0.1",
-    "buildVersion": "312794275",
+    "versionCode": 1013049711,
+    "versionName": "0.1.0",
+    "buildVersion": "1013049711",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }

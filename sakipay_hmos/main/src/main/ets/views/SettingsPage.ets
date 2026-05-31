@@ -595,7 +595,7 @@ export struct SettingsPage {
       Row() {
         Text('版本').fontSize(14)
         Blank()
-        Text('0.1').fontSize(14)
+        Text('0.1.0').fontSize(14)
       }
       .width('100%')
     }
