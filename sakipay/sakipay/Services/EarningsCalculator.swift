@@ -203,7 +203,21 @@ final class EarningsCalculator {
         let ds = dateString(from: date)
         let isOvertime = dayOverrides[ds]?.dayType == .overtime
         let multiplier = isOvertime ? (dayOverrides[ds]?.overtimeMultiplier ?? 2.0) : 1.0
-        let effectiveTotalSeconds: Double = totalWorkSeconds
+
+        // When overtime has customWorkHours, it acts as the reference for the per-second rate
+        // (snapshotted from the normal work schedule). The per-second rate stays anchored to
+        // this reference regardless of the current schedule's totalWorkHours.
+        let overtimeBaseSecondRate: Double
+        if isOvertime, let customHours = dayOverrides[ds]?.customWorkHours, customHours > 0 {
+            overtimeBaseSecondRate = dailyRate / customHours / 3600.0
+        } else {
+            overtimeBaseSecondRate = secondRate
+        }
+
+        // Standard schedule path (regular day or overtime) — same window, same breaks.
+        // Only the effective rate changes for overtime.
+        let effectiveTotalSeconds = totalWorkSeconds
+        let effectiveSecondRate = isOvertime ? overtimeBaseSecondRate : secondRate
 
         // Not started: before work start (and not in cross-midnight's next-day portion)
         if !schedule.isInWorkWindow(currentMinute) && !schedule.isAfterWork(currentMinute) {
@@ -213,13 +227,16 @@ final class EarningsCalculator {
 
         // Completed: after work end
         if schedule.isAfterWork(currentMinute) {
-            let fullAmount = isOvertime ? secondRate * effectiveTotalSeconds * multiplier : dailyRate
+            let fullAmount = isOvertime
+                ? effectiveSecondRate * effectiveTotalSeconds * multiplier
+                : dailyRate
             let status: WorkStatus = isOvertime ? .overtime : .completed
             return TodayEarnings(amount: fullAmount, progress: 1, status: status,
-                                 elapsedSeconds: effectiveTotalSeconds, totalWorkSeconds: effectiveTotalSeconds)
+                                 elapsedSeconds: effectiveTotalSeconds,
+                                 totalWorkSeconds: effectiveTotalSeconds)
         }
 
-        // Check if we're inside a break
+        // In work window — check breaks (schedule breaks apply to both regular and overtime)
         if let activeBreak = schedule.breakContaining(currentMinute) {
             let breakStartSec = Double(activeBreak.startMinutes * 60)
             let breakStartElapsedSec = schedule.elapsedSinceStartSeconds(breakStartSec)
@@ -227,7 +244,7 @@ final class EarningsCalculator {
             let elapsedSec = max(0, breakStartElapsedSec - priorBreakSec)
             let cappedElapsed = min(elapsedSec, effectiveTotalSeconds)
             let progress = effectiveTotalSeconds > 0 ? cappedElapsed / effectiveTotalSeconds : 0
-            let amount = secondRate * cappedElapsed * multiplier
+            let amount = effectiveSecondRate * cappedElapsed * multiplier
             return TodayEarnings(amount: amount, progress: progress,
                                  status: .onBreak, elapsedSeconds: cappedElapsed,
                                  totalWorkSeconds: effectiveTotalSeconds)
@@ -239,7 +256,7 @@ final class EarningsCalculator {
         let elapsedSec = max(0, nowElapsedSec - elapsedBreakSec)
         let cappedElapsed = min(elapsedSec, effectiveTotalSeconds)
         let progress = effectiveTotalSeconds > 0 ? cappedElapsed / effectiveTotalSeconds : 0
-        let amount = secondRate * cappedElapsed * multiplier
+        let amount = effectiveSecondRate * cappedElapsed * multiplier
         let status: WorkStatus = isOvertime ? .overtime : .working
         return TodayEarnings(amount: amount, progress: progress,
                              status: status, elapsedSeconds: cappedElapsed,
@@ -313,8 +330,15 @@ final class EarningsCalculator {
         let ds = dateString(from: date)
         if let override = dayOverrides[ds], override.dayType == .overtime {
             let multiplier = override.overtimeMultiplier
-            let hours = schedule.totalWorkHours
-            return secondRate * hours * 3600.0 * multiplier
+            // Use snapshotted reference hours for the per-second rate, schedule for the window
+            let rateRefHours: Double
+            if let customHours = override.customWorkHours, customHours > 0 {
+                rateRefHours = customHours
+            } else {
+                rateRefHours = schedule.totalWorkHours
+            }
+            let effSecondRate = dailyRate / rateRefHours / 3600.0
+            return effSecondRate * schedule.totalWorkHours * 3600.0 * multiplier
         }
         if isDayOff(date) { return 0 }
         return dailyRate

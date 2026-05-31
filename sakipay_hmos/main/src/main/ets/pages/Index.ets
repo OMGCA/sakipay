@@ -143,6 +143,7 @@ struct Index {
             CalendarSheetPage({
               holidayCalendar: this.holidayCalendar,
               dayOverrides: this.settingsVM.dayOverrides,
+              workTotalHours: this.settingsVM.getTotalWorkHours(),
               onOverrideSaved: (override: DayOverride): void => {
                 this.settingsVM.addOrUpdateOverride(override)
                 this.settingsVM.saveConfig().then((success: boolean) => {

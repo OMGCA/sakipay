@@ -222,6 +222,27 @@ export class SettingsViewModel {
     return (1440 - ws) + we
   }
 
+  /**
+   * Computes the total working hours per day accounting for breaks.
+   * Used to auto-wire customWorkHours when saving an overtime override.
+   */
+  public getTotalWorkHours(): number {
+    const windowMinutes: number = this.getWorkDurationMinutes()
+    const breakMinutes: number = this.getTotalBreakMinutes()
+    const workMinutes: number = Math.max(0, windowMinutes - breakMinutes)
+    return workMinutes / 60
+  }
+
+  private getTotalBreakMinutes(): number {
+    let total: number = 0
+    for (const b of this.breakSegments) {
+      if (b.isValid) {
+        total += b.endMinutes - b.startMinutes
+      }
+    }
+    return total
+  }
+
   public addBreak(): void {
     const ws: number = this.workStartH * 60 + this.workStartM
     const we: number = this.workEndH * 60 + this.workEndM

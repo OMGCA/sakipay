@@ -41,6 +41,7 @@ export struct CalendarSheetPage {
   @Param public onOverrideSaved: OverrideSaveCallback = (override: DayOverride): void => {}
   @Param public onOverrideReset: OverrideResetCallback = (dateString: string): void => {}
   @Param public onClose: CloseCallback = (): void => {}
+  @Param public workTotalHours: number = 8
 
   @Local private displayedYear: number = new Date().getFullYear()
   @Local private displayedMonth: number = new Date().getMonth()
@@ -591,7 +592,7 @@ export struct CalendarSheetPage {
     override.dateString = this.selectedDateString
     override.dayType = this.selectedDayType
     override.overtimeMultiplier = this.selectedOvertimeMultiplier
-    override.customWorkHours = null
+    override.customWorkHours = this.workTotalHours > 0 ? this.workTotalHours : null
 
     this.onOverrideSaved(override)
     // Defer rebuild so @Param dayOverrides syncs from parent re-render first

@@ -368,6 +368,7 @@ struct SettingsView: View {
                 CalendarSheetView(
                     dayOverrides: $dayOverrides,
                     holidayCalendar: HolidayCalendarService.shared.currentCalendar(),
+                    workTotalHours: workTotalHours,
                     onSaved: { saveConfig() }
                 )
                 .presentationDetents([.fraction(0.6)])
@@ -385,6 +386,17 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var workTotalHours: Double {
+        let ws = workMinutes(workStartH, workStartM)
+        let we = workMinutes(workEndH, workEndM)
+        let schedule = WorkSchedule(
+            workStartMinutes: ws,
+            workEndMinutes: we,
+            breaks: breakSegments.filter(\.isValid).map(\.asBreakSchedule)
+        )
+        return schedule.totalWorkHours
     }
 
     private var calibratedWorkingDays: Int {

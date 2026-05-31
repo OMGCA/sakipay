@@ -17,6 +17,7 @@ enum ResolvedDayType: Equatable {
 struct CalendarSheetView: View {
     @Binding var dayOverrides: [String: DayOverride]
     let holidayCalendar: HolidayCalendar?
+    let workTotalHours: Double
     var onSaved: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
@@ -302,7 +303,7 @@ struct CalendarSheetView: View {
             dateString: selectedDateString,
             dayType: selectedDayType,
             overtimeMultiplier: selectedOvertimeMultiplier,
-            customWorkHours: nil
+            customWorkHours: workTotalHours > 0 ? workTotalHours : nil
         )
         dayOverrides[override.dateString] = override
         onSaved?()

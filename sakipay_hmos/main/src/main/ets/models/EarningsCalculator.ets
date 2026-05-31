@@ -222,10 +222,28 @@ export class EarningsCalculator {
     // Determine overtime config for today (if any)
     const ds: string = this.dateStringFromDate(date)
     const override: DayOverride | undefined = this.dayOverrides.get(ds)
-    const isOvertime: boolean = override !== undefined && override.dayType === DayType.OVERTIME
-    const multiplier: number = isOvertime ? (override!.overtimeMultiplier) : 1.0
-    const effectiveTotalSeconds: number = this.totalWorkSeconds
+    let isOvertime: boolean = false
+    let multiplier: number = 1.0
+    // When overtime has customWorkHours, it acts as the reference for the per-second rate
+    // (snapshotted from the normal work schedule). The per-second rate stays anchored to
+    // this reference regardless of the current schedule's totalWorkHours.
+    let overtimeBaseSecondRate: number = this.secondRate
 
+    if (override !== undefined && override.dayType === DayType.OVERTIME) {
+      isOvertime = true
+      multiplier = override.overtimeMultiplier
+
+      const customHours: number | null = override.customWorkHours
+      if (customHours !== null && customHours > 0) {
+        // Derive per-second rate from the snapshotted reference hours
+        overtimeBaseSecondRate = customHours > 0 ? this.dailyRate / customHours / 3600 : this.secondRate
+      }
+    }
+
+    // Standard schedule path (regular day or overtime) — same window, same breaks.
+    // Only the effective rate changes for overtime.
+    const effectiveTotalSeconds: number = this.totalWorkSeconds
+    const effectiveSecondRate: number = isOvertime ? overtimeBaseSecondRate : this.secondRate
     result.totalWorkSeconds = effectiveTotalSeconds
 
     // Not started: before work start (and not in cross-midnight's next-day portion)
@@ -236,7 +254,9 @@ export class EarningsCalculator {
 
     // Completed: after work end
     if (this.schedule.isAfterWork(currentMinute)) {
-      const fullAmount: number = isOvertime ? this.secondRate * effectiveTotalSeconds * multiplier : this.dailyRate
+      const fullAmount: number = isOvertime
+        ? effectiveSecondRate * effectiveTotalSeconds * multiplier
+        : this.dailyRate
       result.amount = fullAmount
       result.progress = 1
       result.status = isOvertime ? WorkStatus.OVERTIME : WorkStatus.COMPLETED
@@ -254,7 +274,7 @@ export class EarningsCalculator {
       let elapsedSec: number = Math.max(0, breakStartElapsedSec - priorBreakSec)
       elapsedSec = Math.min(elapsedSec, effectiveTotalSeconds)
       result.elapsedSeconds = elapsedSec
-      result.amount = this.secondRate * elapsedSec * multiplier
+      result.amount = effectiveSecondRate * elapsedSec * multiplier
       result.progress = effectiveTotalSeconds > 0 ? elapsedSec / effectiveTotalSeconds : 0
       result.status = WorkStatus.ON_BREAK
       return result
@@ -266,7 +286,7 @@ export class EarningsCalculator {
     let elapsedSec: number = Math.max(0, nowElapsedSec - elapsedBreakSec)
     elapsedSec = Math.min(elapsedSec, effectiveTotalSeconds)
     result.elapsedSeconds = elapsedSec
-    result.amount = this.secondRate * elapsedSec * multiplier
+    result.amount = effectiveSecondRate * elapsedSec * multiplier
     result.progress = effectiveTotalSeconds > 0 ? elapsedSec / effectiveTotalSeconds : 0
     result.status = isOvertime ? WorkStatus.OVERTIME : WorkStatus.WORKING
     return result
@@ -345,8 +365,12 @@ export class EarningsCalculator {
     const override: DayOverride | undefined = this.dayOverrides.get(ds)
     if (override !== undefined && override.dayType === DayType.OVERTIME) {
       const multiplier: number = override.overtimeMultiplier
-      const hours: number = this.schedule.totalWorkHours
-      return this.secondRate * hours * 3600 * multiplier
+      const customHours: number | null = override.customWorkHours
+      // Use snapshotted reference hours for the per-second rate, schedule for the window
+      const rateRefHours: number = (customHours !== null && customHours > 0)
+        ? customHours : this.schedule.totalWorkHours
+      const effSecondRate: number = this.dailyRate / rateRefHours / 3600
+      return effSecondRate * this.schedule.totalWorkHours * 3600 * multiplier
     }
     if (this.isDayOff(date)) {
       return 0
