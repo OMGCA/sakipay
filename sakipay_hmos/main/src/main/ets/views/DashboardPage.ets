@@ -93,6 +93,7 @@ export struct DashboardPage {
     Scroll() {
       Column({ space: 16 }) {
         this.todayCard()
+        this.voluntaryOTCard()
         this.monthCard()
         this.paydayCard()
       }
@@ -234,6 +235,41 @@ export struct DashboardPage {
     }
   }
 
+  // ---- Voluntary OT Card ----
+
+  @Builder
+  private voluntaryOTCard(): void {
+    if (this.viewModel.getVoluntaryOTWeeklyText().length > 0) {
+      Row() {
+        SymbolGlyph($r('sys.symbol.clock_fill'))
+          .fontSize(22)
+          .fontColor([$r('app.color.status_overtime')])
+
+        Column({ space: 4 }) {
+          Text('公司欠你')
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+
+          Text('本周自愿加班累计 ' + this.viewModel.currency + this.viewModel.getVoluntaryOTWeeklyText())
+            .fontSize(12)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .margin({ left: 10 })
+        .alignItems(HorizontalAlign.Start)
+
+        Blank()
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
+      .padding(20)
+      .borderRadius(16)
+      .backgroundColor($r('app.color.glass_overlay'))
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+      .shadow({ radius: 12, color: $r('app.color.card_shadow'), offsetX: 0, offsetY: 4 })
+      .border({ width: 0.5, color: $r('app.color.glass_border') })
+    }
+  }
+
   // ---- Month Card ----
 
   @Builder
@@ -300,7 +336,7 @@ export struct DashboardPage {
         Text(this.viewModel.getPaydayText())
           .fontSize(16).fontWeight(FontWeight.Medium).margin({ left: 10 })
         Blank()
-        Text(this.viewModel.monthSummary.isPayday ? '你做到了' : `倒数 ${this.viewModel.monthSummary.paydayCycleElapsed} / ${this.viewModel.monthSummary.paydayCycleTotal} 天`)
+        Text(this.viewModel.monthSummary.isPayday ? '你做到了' : `已过 ${this.viewModel.monthSummary.paydayCycleElapsed} / ${this.viewModel.monthSummary.paydayCycleTotal} 天`)
           .fontSize(12).fontColor($r('app.color.text_secondary'))
       }
       .width('100%').alignItems(VerticalAlign.Center)

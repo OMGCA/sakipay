@@ -22,6 +22,7 @@ struct DashboardView: View {
         ScrollView {
             VStack(spacing: 24) {
                 todayCard
+                voluntaryOTCard
                 monthCard
                 paydayCard
                 Spacer(minLength: 32)
@@ -142,6 +143,34 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Voluntary OT Card
+
+    @ViewBuilder
+    private var voluntaryOTCard: some View {
+        if let weeklyText = vm.voluntaryOTWeeklyText {
+            HStack {
+                Image(systemName: "clock.badge.exclamationmark.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color(red: 0.78, green: 0.35, blue: 0.35))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("公司欠你")
+                        .font(.headline)
+                    Text("本周自愿加班累计 \(vm.currency)\(weeklyText)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(24)
+            .background(cardBackground, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(.separator, lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        }
+    }
+
     // MARK: - Month Card
 
     private var monthCard: some View {
@@ -207,7 +236,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(vm.paydayText)
                         .font(.headline)
-                    Text(vm.monthSummary.isPayday ? "发工资了!" : "倒数 \(vm.monthSummary.paydayCycleElapsed) / \(vm.monthSummary.paydayCycleTotal) 天")
+                    Text(vm.monthSummary.isPayday ? "发工资了!" : "已过 \(vm.monthSummary.paydayCycleElapsed) / \(vm.monthSummary.paydayCycleTotal) 天")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

@@ -274,6 +274,80 @@ export class PreferencesStore {
     await this.saveVoluntaryOTSessionStart(0)
   }
 
+  // ---- Weekly Voluntary OT Accumulation ----
+
+  public async saveVoluntaryOTWeeklyEarnings(amount: number): Promise<void> {
+    if (this.store === null) { return }
+    try {
+      await this.store.put('voluntaryOTWeeklyEarnings', amount)
+      await this.store.flush()
+    } catch (err) {
+      Log.error(`saveVoluntaryOTWeeklyEarnings failed: ${err}`)
+    }
+  }
+
+  public async loadVoluntaryOTWeeklyEarnings(): Promise<number> {
+    if (this.store === null) { return 0 }
+    try {
+      return (await this.store.get('voluntaryOTWeeklyEarnings', 0)) as number
+    } catch (err) {
+      Log.error(`loadVoluntaryOTWeeklyEarnings failed: ${err}`)
+      return 0
+    }
+  }
+
+  public async saveVoluntaryOTWeekStart(dateStr: string): Promise<void> {
+    if (this.store === null) { return }
+    try {
+      await this.store.put('voluntaryOTWeekStart', dateStr)
+      await this.store.flush()
+    } catch (err) {
+      Log.error(`saveVoluntaryOTWeekStart failed: ${err}`)
+    }
+  }
+
+  public async loadVoluntaryOTWeekStart(): Promise<string> {
+    if (this.store === null) { return '' }
+    try {
+      return (await this.store.get('voluntaryOTWeekStart', '')) as string
+    } catch (err) {
+      Log.error(`loadVoluntaryOTWeekStart failed: ${err}`)
+      return ''
+    }
+  }
+
+  /**
+   * Converts the daily accumulated OT seconds into money and adds to the weekly total.
+   * Resets the daily accumulated and the stored date. Call this when a new work day begins.
+   */
+  public async bankDailyVoluntaryOT(secondRate: number): Promise<void> {
+    const dailyOT: number = await this.loadVoluntaryOTAccumulated()
+    if (dailyOT <= 0) { return }
+
+    const monday: string = this.mondayOfWeek()
+    const storedWeek: string = await this.loadVoluntaryOTWeekStart()
+    if (storedWeek !== monday) {
+      await this.saveVoluntaryOTWeeklyEarnings(0)
+      await this.saveVoluntaryOTWeekStart(monday)
+    }
+
+    const current: number = await this.loadVoluntaryOTWeeklyEarnings()
+    await this.saveVoluntaryOTWeeklyEarnings(current + dailyOT * secondRate)
+    await this.saveVoluntaryOTAccumulated(0)
+    await this.saveVoluntaryOTDate('')
+  }
+
+  private mondayOfWeek(): string {
+    const d: Date = new Date()
+    const day: number = d.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+    const diff: number = day === 0 ? 6 : day - 1 // Days since Monday
+    const monday: Date = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff)
+    const y: number = monday.getFullYear()
+    const m: number = monday.getMonth() + 1
+    const dayNum: number = monday.getDate()
+    return `${y}-${String(m).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+  }
+
   private dateStringToday(): string {
     const d: Date = new Date()
     const y: number = d.getFullYear()

@@ -17,6 +17,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var isConfigured = false
     @Published var isPrivacyMode = false
     @Published var isVoluntaryOvertimeActive = false
+    @Published var voluntaryOTWeeklyEarnings: Double = 0
 
     private var calculator: EarningsCalculator?
     private var timer: Timer?
@@ -27,6 +28,7 @@ final class DashboardViewModel: ObservableObject {
     init() {
         isPrivacyMode = store.isPrivacyMode
         isVoluntaryOvertimeActive = store.voluntaryOTActive
+        voluntaryOTWeeklyEarnings = store.voluntaryOTWeeklyEarnings
     }
 
     func configure(with config: EarningsConfig) {
@@ -60,10 +62,10 @@ final class DashboardViewModel: ObservableObject {
         // Reset voluntary OT accumulation when a new work day begins
         // (transition from notStarted to working)
         if today.status == .working && previousStatus == .notStarted {
-            store.voluntaryOTAccumulated = 0
-            store.voluntaryOTDate = ""
+            store.bankDailyVoluntaryOT(secondRate: calc.secondRate)
         }
         previousStatus = today.status
+        voluntaryOTWeeklyEarnings = store.voluntaryOTWeeklyEarnings
 
         withAnimation(.easeInOut(duration: 0.3)) {
             todayAmount = today.amount
@@ -84,11 +86,16 @@ final class DashboardViewModel: ObservableObject {
     func toggleVoluntaryOvertime() {
         if isVoluntaryOvertimeActive {
             store.endVoluntaryOTSession()
+            // Bank immediately so the weekly card appears right after ending OT
+            if let calc = calculator {
+                store.bankDailyVoluntaryOT(secondRate: calc.secondRate)
+            }
         } else {
             store.startVoluntaryOTSession()
         }
         isVoluntaryOvertimeActive = store.voluntaryOTActive
         refresh()
+        voluntaryOTWeeklyEarnings = store.voluntaryOTWeeklyEarnings
     }
 
     private func startTimer() {
@@ -132,5 +139,11 @@ final class DashboardViewModel: ObservableObject {
         if monthSummary.isPayday { return "今天发工资!" }
         if monthSummary.daysUntilPayday == 1 { return "明天发工资" }
         return "还有 \(monthSummary.daysUntilPayday) 天发工资"
+    }
+
+    /// Formatted weekly voluntary OT earnings string, or nil if zero.
+    var voluntaryOTWeeklyText: String? {
+        guard voluntaryOTWeeklyEarnings > 0 else { return nil }
+        return String(format: "%.2f", voluntaryOTWeeklyEarnings)
     }
 }

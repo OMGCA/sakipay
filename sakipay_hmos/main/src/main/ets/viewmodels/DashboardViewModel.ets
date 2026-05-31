@@ -20,6 +20,7 @@ export class DashboardViewModel {
   @Trace public monthSummary: MonthSummary = new MonthSummary()
   @Trace public isPrivacyMode: boolean = false
   @Trace public isVoluntaryOvertimeActive: boolean = false
+  @Trace public voluntaryOTWeeklyEarnings: number = 0
 
   private calculator: EarningsCalculator = new EarningsCalculator()
   private timerId: number = -1
@@ -35,6 +36,7 @@ export class DashboardViewModel {
     await this.store.initialise(context)
     this.isPrivacyMode = await this.store.loadPrivacyMode()
     this.isVoluntaryOvertimeActive = await this.store.loadVoluntaryOTActive()
+    this.voluntaryOTWeeklyEarnings = await this.store.loadVoluntaryOTWeeklyEarnings()
   }
 
   public async togglePrivacy(): Promise<void> {
@@ -53,6 +55,9 @@ export class DashboardViewModel {
   public async toggleVoluntaryOvertime(): Promise<void> {
     if (this.isVoluntaryOvertimeActive) {
       await this.store.endVoluntaryOTSession()
+      // Bank immediately so the weekly card appears right after ending OT
+      await this.store.bankDailyVoluntaryOT(this.calculator.secondRate)
+      this.voluntaryOTWeeklyEarnings = await this.store.loadVoluntaryOTWeeklyEarnings()
     } else {
       await this.store.startVoluntaryOTSession()
     }
@@ -115,8 +120,11 @@ export class DashboardViewModel {
         // Reset voluntary OT accumulation when a new work day begins
         // (transition from notStarted to working)
         if (today.status === WorkStatus.WORKING && this.previousStatus === WorkStatus.NOT_STARTED) {
-          this.store.saveVoluntaryOTAccumulated(0)
-          this.store.saveVoluntaryOTDate('')
+          this.store.bankDailyVoluntaryOT(this.calculator.secondRate).then((): void => {
+            this.store.loadVoluntaryOTWeeklyEarnings().then((val: number): void => {
+              this.voluntaryOTWeeklyEarnings = val
+            })
+          })
         }
         this.previousStatus = today.status
 
@@ -171,5 +179,15 @@ export class DashboardViewModel {
       return '明天发工资'
     }
     return `还有 ${this.monthSummary.daysUntilPayday} 天发工资`
+  }
+
+  /**
+   * Formatted weekly voluntary OT earnings string, or empty string if zero.
+   */
+  public getVoluntaryOTWeeklyText(): string {
+    if (this.voluntaryOTWeeklyEarnings <= 0) {
+      return ''
+    }
+    return this.voluntaryOTWeeklyEarnings.toFixed(2)
   }
 }

@@ -14,6 +14,8 @@ final class AppGroupStore {
         case voluntaryOTAccumulated
         case voluntaryOTDate
         case voluntaryOTSessionStart
+        case voluntaryOTWeeklyEarnings
+        case voluntaryOTWeekStart
     }
 
     private let defaults: UserDefaults?
@@ -170,6 +172,52 @@ final class AppGroupStore {
         }
         voluntaryOTActive = true
         voluntaryOTSessionStart = now.timeIntervalSince1970
+    }
+
+    // MARK: - Weekly Voluntary OT Accumulation
+
+    /// Total OT money the company owes for the current week.
+    var voluntaryOTWeeklyEarnings: Double {
+        get { defaults?.double(forKey: Key.voluntaryOTWeeklyEarnings.rawValue) ?? 0 }
+        set {
+            defaults?.set(newValue, forKey: Key.voluntaryOTWeeklyEarnings.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
+    /// Monday date string of the week for which weeklyEarnings is valid.
+    var voluntaryOTWeekStart: String {
+        get { defaults?.string(forKey: Key.voluntaryOTWeekStart.rawValue) ?? "" }
+        set {
+            defaults?.set(newValue, forKey: Key.voluntaryOTWeekStart.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
+    /// Converts the daily accumulated OT seconds into money and adds to the weekly total.
+    /// Resets the daily accumulated and the stored date. Call this when a new work day begins.
+    func bankDailyVoluntaryOT(secondRate: Double, now: Date = Date(), calendar: Calendar = .current) {
+        let dailyOT = voluntaryOTAccumulated
+        guard dailyOT > 0 else { return }
+
+        let monday = mondayOfWeek(from: now, calendar: calendar)
+        if voluntaryOTWeekStart != monday {
+            voluntaryOTWeeklyEarnings = 0
+            voluntaryOTWeekStart = monday
+        }
+
+        voluntaryOTWeeklyEarnings += dailyOT * secondRate
+        voluntaryOTAccumulated = 0
+        voluntaryOTDate = ""
+    }
+
+    private func mondayOfWeek(from date: Date, calendar: Calendar) -> String {
+        var comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        comps.weekday = 2 // Monday
+        guard let monday = calendar.date(from: comps) else {
+            return dateString(from: date, calendar: calendar)
+        }
+        return dateString(from: monday, calendar: calendar)
     }
 
     private func dateString(from date: Date, calendar: Calendar) -> String {
