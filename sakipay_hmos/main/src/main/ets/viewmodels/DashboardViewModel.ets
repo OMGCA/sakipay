@@ -1,0 +1,193 @@
+/* (c) Copyright XiatStudio 2026~2026 */
+import {
+  EarningsCalculator, WorkStatus, TodayEarnings, MonthSummary, BreakScheduleEntry
+} from '../models/EarningsCalculator'
+import { BreakSegment } from '../models/BreakSegment'
+import { HolidayCalendarData, DayOverride } from '../models/HolidayCalendar'
+import { PreferencesStore } from '../services/PreferencesStore'
+import { Log } from '../services/Log'
+
+/**
+ * VM driving the dashboard — holds reactive state for the Today tab.
+ */
+@ObservedV2
+export class DashboardViewModel {
+  @Trace public todayAmount: number = 0
+  @Trace public todayProgress: number = 0
+  @Trace public todayStatus: WorkStatus = WorkStatus.NOT_STARTED
+  @Trace public currency: string = '¥'
+  @Trace public isConfigured: boolean = false
+  @Trace public monthSummary: MonthSummary = new MonthSummary()
+  @Trace public isPrivacyMode: boolean = false
+  @Trace public isVoluntaryOvertimeActive: boolean = false
+  @Trace public voluntaryOTWeeklyEarnings: number = 0
+
+  private calculator: EarningsCalculator = new EarningsCalculator()
+  private timerId: number = -1
+  private store: PreferencesStore = new PreferencesStore()
+  private previousStatus: WorkStatus = WorkStatus.NOT_STARTED
+
+  /** Callback invoked after privacy toggle — wired to widget refresh in Index. */
+  public onPrivacyToggled: (() => void) | null = null
+  /** Callback invoked after voluntary OT toggle — wired to widget refresh in Index. */
+  public onVoluntaryOvertimeToggled: (() => void) | null = null
+
+  public async initialise(context: Context): Promise<void> {
+    await this.store.initialise(context)
+    this.isPrivacyMode = await this.store.loadPrivacyMode()
+    this.isVoluntaryOvertimeActive = await this.store.loadVoluntaryOTActive()
+    this.voluntaryOTWeeklyEarnings = await this.store.loadVoluntaryOTWeeklyEarnings()
+  }
+
+  public async togglePrivacy(): Promise<void> {
+    this.isPrivacyMode = !this.isPrivacyMode
+    await this.store.savePrivacyMode(this.isPrivacyMode)
+    if (this.onPrivacyToggled !== null) {
+      this.onPrivacyToggled()
+    }
+  }
+
+  /**
+   * Toggles voluntary overtime on/off. When starting, begins a new session counting from now.
+   * When ending, accumulates the current session's elapsed time. Sessions accumulate across
+   * toggles within the same day and reset on the next working day.
+   */
+  public async toggleVoluntaryOvertime(): Promise<void> {
+    if (this.isVoluntaryOvertimeActive) {
+      await this.store.endVoluntaryOTSession()
+      // Bank immediately so the weekly card appears right after ending OT
+      await this.store.bankDailyVoluntaryOT(this.calculator.secondRate)
+      this.voluntaryOTWeeklyEarnings = await this.store.loadVoluntaryOTWeeklyEarnings()
+    } else {
+      await this.store.startVoluntaryOTSession()
+    }
+    this.isVoluntaryOvertimeActive = await this.store.loadVoluntaryOTActive()
+    this.refresh()
+    if (this.onVoluntaryOvertimeToggled !== null) {
+      this.onVoluntaryOvertimeToggled()
+    }
+  }
+
+  public configure(
+    monthlyPay: number, workingDays: number, currency: string, taxRate: number, payDay: number,
+    workStartH: number, workStartM: number, workEndH: number, workEndM: number,
+    breaks: BreakSegment[],
+    holidayCalendar: HolidayCalendarData | null = null,
+    dayOverrides: DayOverride[] = []
+  ): void {
+    this.currency = currency
+    this.isConfigured = monthlyPay > 0
+
+    this.calculator.monthlyPay = monthlyPay
+    this.calculator.workingDaysPerMonth = workingDays
+    this.calculator.taxRate = taxRate
+    this.calculator.payDay = payDay
+    this.calculator.schedule.workStartMinutes = workStartH * 60 + workStartM
+    this.calculator.schedule.workEndMinutes = workEndH * 60 + workEndM
+    this.calculator.holidayCalendar = holidayCalendar
+    const overrideMap: Map<string, DayOverride> = new Map()
+    for (const ov of dayOverrides) {
+      overrideMap.set(ov.dateString, ov)
+    }
+    this.calculator.dayOverrides = overrideMap
+
+    const mapped: BreakScheduleEntry[] = []
+    for (const b of breaks) {
+      if (b.isValid) {
+        const entry: BreakScheduleEntry = new BreakScheduleEntry()
+        entry.startMinutes = b.startMinutes
+        entry.endMinutes = b.endMinutes
+        mapped.push(entry)
+      }
+    }
+    this.calculator.schedule.breaks = mapped
+
+    this.refresh()
+    this.startTimer()
+  }
+
+  /**
+   * Refreshes earnings data. Re-reads voluntary OT session state from the store
+   * on every call so that widget toggles are picked up by the app.
+   */
+  public refresh(): void {
+    this.store.loadVoluntaryOTActive().then((isActive: boolean): void => {
+      this.isVoluntaryOvertimeActive = isActive
+      this.store.voluntaryOvertimeTotalSeconds().then((totalOTSeconds: number): void => {
+        const today: TodayEarnings = this.calculator.calculateTodayEarnings(new Date(),
+          totalOTSeconds)
+
+        // Reset voluntary OT accumulation when a new work day begins
+        // (transition from notStarted to working)
+        if (today.status === WorkStatus.WORKING && this.previousStatus === WorkStatus.NOT_STARTED) {
+          this.store.bankDailyVoluntaryOT(this.calculator.secondRate).then((): void => {
+            this.store.loadVoluntaryOTWeeklyEarnings().then((val: number): void => {
+              this.voluntaryOTWeeklyEarnings = val
+            })
+          })
+        }
+        this.previousStatus = today.status
+
+        this.todayAmount = today.amount
+        this.todayProgress = today.progress
+        this.todayStatus = today.status
+        this.monthSummary = this.calculator.calculateMonthSummary()
+      })
+    })
+  }
+
+  public startTimer(): void {
+    this.stopTimer()
+    this.timerId = setInterval(() => {
+      this.refresh()
+    }, 5000)
+  }
+
+  public stopTimer(): void {
+    if (this.timerId !== -1) {
+      clearInterval(this.timerId)
+      this.timerId = -1
+    }
+  }
+
+  public getStatusText(): string {
+    switch (this.todayStatus) {
+      case WorkStatus.NOT_STARTED:
+        return '还没开始'
+      case WorkStatus.WORKING:
+        return '窝囊费积累中'
+      case WorkStatus.ON_BREAK:
+        return '休息中'
+      case WorkStatus.COMPLETED:
+        return '下班啦！'
+      case WorkStatus.OVERTIME:
+        return '加班攒钱中 💪'
+      case WorkStatus.VOLUNTARY_OVERTIME:
+        return '自愿加班中 😤'
+      case WorkStatus.DAY_OFF:
+        return '休息日'
+      default:
+        return ''
+    }
+  }
+
+  public getPaydayText(): string {
+    if (this.monthSummary.isPayday) {
+      return '今天发工资!'
+    }
+    if (this.monthSummary.daysUntilPayday === 1) {
+      return '明天发工资'
+    }
+    return `还有 ${this.monthSummary.daysUntilPayday} 天发工资`
+  }
+
+  /**
+   * Formatted weekly voluntary OT earnings string, or empty string if zero.
+   */
+  public getVoluntaryOTWeeklyText(): string {
+    if (this.voluntaryOTWeeklyEarnings <= 0) {
+      return ''
+    }
+    return this.voluntaryOTWeeklyEarnings.toFixed(2)
+  }
+}
