@@ -76,6 +76,7 @@ export default class MainAbility extends UIAbility {
       const currency: string = config.currency
 
       const isVoluntaryOT: boolean = await store.loadVoluntaryOTActive()
+      const isPaused: boolean = await store.loadPauseMode()
       const totalOTSeconds: number = await store.voluntaryOvertimeTotalSeconds()
 
       if (config.monthlyPay > 0) {
@@ -87,7 +88,7 @@ export default class MainAbility extends UIAbility {
         calc.schedule.workStartMinutes = config.workStartHour * 60 + config.workStartMinute
         calc.schedule.workEndMinutes = config.workEndHour * 60 + config.workEndMinute
         calc.schedule.breaks = this.parseBreaksForWidget(config.breaksJSON)
-        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
+        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds, isPaused)
         amount = today.amount.toFixed(2)
         progress = today.progress
         status = today.status as string

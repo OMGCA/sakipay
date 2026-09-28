@@ -45,24 +45,56 @@
       "value": "#34C759"
     },
     {
+      "name": "status_working_tint",
+      "value": "#1A34C759"
+    },
+    {
       "name": "status_break",
       "value": "#FF9500"
+    },
+    {
+      "name": "status_break_tint",
+      "value": "#1AFF9500"
     },
     {
       "name": "status_completed",
       "value": "#007AFF"
     },
     {
+      "name": "status_completed_tint",
+      "value": "#1A007AFF"
+    },
+    {
       "name": "status_inactive",
       "value": "#8E8E93"
+    },
+    {
+      "name": "status_inactive_tint",
+      "value": "#1A8E8E93"
     },
     {
       "name": "status_overtime",
       "value": "#C76B6B"
     },
     {
+      "name": "status_overtime_tint",
+      "value": "#1AC76B6B"
+    },
+    {
       "name": "status_dayoff",
       "value": "#5AB8AD"
+    },
+    {
+      "name": "status_dayoff_tint",
+      "value": "#1A5AB8AD"
+    },
+    {
+      "name": "status_paused",
+      "value": "#8E7CC3"
+    },
+    {
+      "name": "status_paused_tint",
+      "value": "#1A8E7CC3"
     },
     {
       "name": "card_border",

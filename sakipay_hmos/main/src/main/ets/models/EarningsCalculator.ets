@@ -144,7 +144,9 @@ export enum WorkStatus {
   COMPLETED = 'completed',
   OVERTIME = 'overtime',
   VOLUNTARY_OVERTIME = 'voluntaryOvertime',
-  DAY_OFF = 'dayOff'
+  DAY_OFF = 'dayOff',
+  /** User-armed pause: nothing accrues, regardless of day type or calendar. */
+  PAUSED = 'paused'
 }
 
 /**
@@ -213,11 +215,19 @@ export class EarningsCalculator {
    *   (accumulated from prior sessions today + elapsed in current session). When > 0, the
    *   calculator returns VOLUNTARY_OVERTIME with earnings at the normal secondRate.
    *   Pass 0 when no voluntary OT session is active.
+   * @param isPaused User-armed pause. When true, nothing accrues at all — the calendar and any
+   *   day overrides are ignored entirely, so this is checked before the day-off test.
    */
   public calculateTodayEarnings(date: Date = new Date(),
-                                 voluntaryOvertimeTotalSeconds: number = 0): TodayEarnings {
+                                 voluntaryOvertimeTotalSeconds: number = 0,
+                                 isPaused: boolean = false): TodayEarnings {
     const result = new TodayEarnings()
     result.totalWorkSeconds = this.totalWorkSeconds
+
+    if (isPaused) {
+      result.status = WorkStatus.PAUSED
+      return result
+    }
 
     if (this.isDayOff(date)) {
       result.status = WorkStatus.DAY_OFF
@@ -312,15 +322,19 @@ export class EarningsCalculator {
     return result
   }
 
-  public calculateMonthSummary(date: Date = new Date()): MonthSummary {
+  /**
+   * @param isPaused When true, today contributes nothing to the month totals — a paused day is
+   *   treated as earning zero, matching calculateTodayEarnings.
+   */
+  public calculateMonthSummary(date: Date = new Date(), isPaused: boolean = false): MonthSummary {
     const summary = new MonthSummary()
     const workingDays: number = this.countWorkingDaysInMonth(date)
     const elapsedDays: number = this.countElapsedWorkingDays(date)
     summary.workingDaysThisMonth = workingDays
     summary.workingDaysElapsed = elapsedDays
     summary.monthProgress = workingDays > 0 ? elapsedDays / workingDays : 0
-    summary.monthEarnings = this.calculateElapsedMonthEarnings(date)
-    summary.totalMonthEarnings = this.calculateTotalMonthEarnings(date)
+    summary.monthEarnings = this.calculateElapsedMonthEarnings(date, isPaused)
+    summary.totalMonthEarnings = this.calculateTotalMonthEarnings(date, isPaused)
 
     const paydayInfo = this.calculatePayday(date)
     summary.daysUntilPayday = paydayInfo[0]
@@ -400,13 +414,17 @@ export class EarningsCalculator {
 
   /**
    * Sums the earnings for every elapsed working day in the month (including today if working).
+   * When paused, today is skipped so a paused day contributes nothing.
    */
-  private calculateElapsedMonthEarnings(date: Date): number {
+  private calculateElapsedMonthEarnings(date: Date, isPaused: boolean): number {
     const year: number = date.getFullYear()
     const month: number = date.getMonth()
     const today: number = date.getDate()
     let total: number = 0
     for (let d: number = 1; d <= today; d++) {
+      if (isPaused && d === today) {
+        continue
+      }
       const check: Date = new Date(year, month, d)
       total += this.dailyEarningsForDate(check)
     }
@@ -415,13 +433,18 @@ export class EarningsCalculator {
 
   /**
    * Sums the earnings for every working day in the entire month.
+   * When paused, today is skipped so a paused day contributes nothing.
    */
-  private calculateTotalMonthEarnings(date: Date): number {
+  private calculateTotalMonthEarnings(date: Date, isPaused: boolean): number {
     const year: number = date.getFullYear()
     const month: number = date.getMonth()
     const daysInMonth: number = new Date(year, month + 1, 0).getDate()
+    const today: number = date.getDate()
     let total: number = 0
     for (let d: number = 1; d <= daysInMonth; d++) {
+      if (isPaused && d === today) {
+        continue
+      }
       const check: Date = new Date(year, month, d)
       total += this.dailyEarningsForDate(check)
     }

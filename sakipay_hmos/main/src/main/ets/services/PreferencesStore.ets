@@ -134,6 +134,33 @@ export class PreferencesStore {
     }
   }
 
+  // ---- Pause Mode ----
+
+  /**
+   * Persists the user-armed pause. Sticky: it stays on across days and app launches until the
+   * user switches it off again via the same control.
+   */
+  public async savePauseMode(paused: boolean): Promise<void> {
+    if (this.store === null) { return }
+    try {
+      await this.store.put('isPaused', paused ? 1 : 0)
+      await this.store.flush()
+    } catch (err) {
+      Log.error(`savePauseMode failed: ${err}`)
+    }
+  }
+
+  public async loadPauseMode(): Promise<boolean> {
+    if (this.store === null) { return false }
+    try {
+      const val: number = (await this.store.get('isPaused', 0)) as number
+      return val === 1
+    } catch (err) {
+      Log.error(`loadPauseMode failed: ${err}`)
+      return false
+    }
+  }
+
   // ---- Voluntary Overtime Session State ----
 
   public async saveVoluntaryOTActive(active: boolean): Promise<void> {

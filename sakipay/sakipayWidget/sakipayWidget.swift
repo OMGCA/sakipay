@@ -78,7 +78,9 @@ struct EarningsProvider: TimelineProvider {
         let voluntaryOT = store.voluntaryOTActive
         // Read-only: the widget renders state but must never mutate the shared OT session.
         let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: now, mutatesState: false)
-        let today = calc.calculateTodayEarnings(at: now, voluntaryOvertimeTotalSeconds: totalOTSeconds)
+        let paused = store.isPaused
+        let today = calc.calculateTodayEarnings(at: now, voluntaryOvertimeTotalSeconds: totalOTSeconds,
+                                                isPaused: paused)
         let privacy = store.isPrivacyMode
         let entry = EarningsEntry(
             date: now,
@@ -99,7 +101,8 @@ struct EarningsProvider: TimelineProvider {
             // that is still running today and drop its unbanked time.
             let otSeconds = store.voluntaryOvertimeTotalSeconds(now: refreshDate, mutatesState: false)
             let t = calc.calculateTodayEarnings(at: refreshDate,
-                                                 voluntaryOvertimeTotalSeconds: otSeconds)
+                                                 voluntaryOvertimeTotalSeconds: otSeconds,
+                                                 isPaused: paused)
             entries.append(EarningsEntry(
                 date: refreshDate,
                 todayAmount: t.amount,
@@ -119,7 +122,8 @@ struct EarningsProvider: TimelineProvider {
         let calc = store.readCalculator()
         let voluntaryOT = store.voluntaryOTActive
         let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: date, mutatesState: false)
-        let today = calc.calculateTodayEarnings(at: date, voluntaryOvertimeTotalSeconds: totalOTSeconds)
+        let today = calc.calculateTodayEarnings(at: date, voluntaryOvertimeTotalSeconds: totalOTSeconds,
+                                                isPaused: store.isPaused)
         return EarningsEntry(
             date: date,
             todayAmount: today.amount,
@@ -151,7 +155,7 @@ struct EarningsProvider: TimelineProvider {
             interval = 5
         case .notStarted:
             interval = 15
-        case .completed, .dayOff:
+        case .completed, .dayOff, .paused:
             interval = 0
         }
 
@@ -228,7 +232,11 @@ struct sakipayWidgetEntryView: View {
                     .buttonStyle(.plain)
                 }
 
-                if entry.status == .dayOff {
+                if entry.status == .paused {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                } else if entry.status == .dayOff {
                     Text("🏖️")
                         .font(.system(size: 22))
                 } else if entry.isPrivacyMode {
@@ -271,6 +279,7 @@ struct sakipayWidgetEntryView: View {
         case .overtime: Color(red: 0.78, green: 0.35, blue: 0.35)
         case .voluntaryOvertime: Color(red: 0.78, green: 0.35, blue: 0.35)
         case .dayOff: Color(red: 0.35, green: 0.73, blue: 0.67)
+        case .paused: Color(red: 0.56, green: 0.49, blue: 0.76)
         }
     }
 
@@ -283,6 +292,7 @@ struct sakipayWidgetEntryView: View {
         case .overtime: "加班中 💪"
         case .voluntaryOvertime: "自愿加班中"
         case .dayOff: "休息日"
+        case .paused: "已暂停"
         }
     }
 }

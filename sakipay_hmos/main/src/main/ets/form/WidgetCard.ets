@@ -71,7 +71,12 @@ struct WidgetCard {
         .justifyContent(FlexAlign.Center)
         .margin({ bottom: 6 })
 
-        if (this.cardStatus === 'dayOff') {
+        if (this.cardStatus === 'paused') {
+          Text('❚❚')
+            .fontSize(16)
+            .fontWeight(600)
+            .fontColor($r('app.color.status_paused'))
+        } else if (this.cardStatus === 'dayOff') {
           Text('🏖️')
             .fontSize(18)
         } else if (this.isPrivacyMode === '1') {
@@ -133,6 +138,7 @@ struct WidgetCard {
     if (this.cardStatus === 'overtime') { return $r('app.color.status_overtime') }
     if (this.cardStatus === 'voluntaryOvertime') { return $r('app.color.status_overtime') }
     if (this.cardStatus === 'dayOff') { return $r('app.color.status_dayoff') }
+    if (this.cardStatus === 'paused') { return $r('app.color.status_paused') }
     return $r('app.color.status_inactive')
   }
 
@@ -143,6 +149,7 @@ struct WidgetCard {
     if (this.cardStatus === 'completed') { return '下班啦！' }
     if (this.cardStatus === 'overtime') { return '加班中 💪' }
     if (this.cardStatus === 'voluntaryOvertime') { return '自愿加班中' }
+    if (this.cardStatus === 'paused') { return '已暂停' }
     return '休息日'
   }
 }

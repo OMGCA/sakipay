@@ -10,6 +10,7 @@ final class AppGroupStore {
         case breaksJSON
         case dayOverridesJSON
         case isPrivacyMode
+        case isPaused
         case voluntaryOTActive
         case voluntaryOTAccumulated
         case voluntaryOTDate
@@ -92,6 +93,16 @@ final class AppGroupStore {
         get { defaults?.bool(forKey: Key.isPrivacyMode.rawValue) ?? false }
         set {
             defaults?.set(newValue, forKey: Key.isPrivacyMode.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
+    /// User-armed pause. Unlike the voluntary-OT session this is *sticky*: it stays on across
+    /// days, app launches and schedule boundaries until the user switches it off again.
+    var isPaused: Bool {
+        get { defaults?.bool(forKey: Key.isPaused.rawValue) ?? false }
+        set {
+            defaults?.set(newValue, forKey: Key.isPaused.rawValue)
             defaults?.synchronize()
         }
     }

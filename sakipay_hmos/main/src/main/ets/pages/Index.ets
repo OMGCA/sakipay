@@ -56,6 +56,9 @@ struct Index {
         this.dashboardVM.onPrivacyToggled = (): void => {
           this.refreshWidgets(appCtx)
         }
+        this.dashboardVM.onPauseToggled = (): void => {
+          this.refreshWidgets(appCtx)
+        }
         this.dashboardVM.onVoluntaryOvertimeToggled = (): void => {
           this.refreshWidgets(appCtx)
         }
@@ -198,6 +201,7 @@ struct Index {
       const config: ConfigData = await store.loadConfig()
       const isPrivacy: boolean = await store.loadPrivacyMode()
       const isVoluntaryOT: boolean = await store.loadVoluntaryOTActive()
+      const isPaused: boolean = await store.loadPauseMode()
       const totalOTSeconds: number = await store.voluntaryOvertimeTotalSeconds()
 
       let amount: string = '0.00'
@@ -226,7 +230,7 @@ struct Index {
         // Load day overrides
         this.loadDayOverridesForWidget(calc, config.dayOverridesJSON)
 
-        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
+        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds, isPaused)
         amount = today.amount.toFixed(2)
         progress = today.progress
         status = today.status as string
