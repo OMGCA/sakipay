@@ -76,7 +76,8 @@ struct EarningsProvider: TimelineProvider {
         let now = Date()
         let calc = store.readCalculator()
         let voluntaryOT = store.voluntaryOTActive
-        let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: now)
+        // Read-only: the widget renders state but must never mutate the shared OT session.
+        let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: now, mutatesState: false)
         let today = calc.calculateTodayEarnings(at: now, voluntaryOvertimeTotalSeconds: totalOTSeconds)
         let privacy = store.isPrivacyMode
         let entry = EarningsEntry(
@@ -93,8 +94,12 @@ struct EarningsProvider: TimelineProvider {
 
         let refreshDates = timelineRefreshDates(from: now, calc: calc, status: today.status)
         for refreshDate in refreshDates {
+            // These are *future* dates (the next 5s marks plus tomorrow's work start), so the
+            // session must be probed read-only. Letting it reset here would auto-end a session
+            // that is still running today and drop its unbanked time.
+            let otSeconds = store.voluntaryOvertimeTotalSeconds(now: refreshDate, mutatesState: false)
             let t = calc.calculateTodayEarnings(at: refreshDate,
-                                                 voluntaryOvertimeTotalSeconds: store.voluntaryOvertimeTotalSeconds(now: refreshDate))
+                                                 voluntaryOvertimeTotalSeconds: otSeconds)
             entries.append(EarningsEntry(
                 date: refreshDate,
                 todayAmount: t.amount,
@@ -113,7 +118,7 @@ struct EarningsProvider: TimelineProvider {
     private func makeEntry(for date: Date) -> EarningsEntry {
         let calc = store.readCalculator()
         let voluntaryOT = store.voluntaryOTActive
-        let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: date)
+        let totalOTSeconds = store.voluntaryOvertimeTotalSeconds(now: date, mutatesState: false)
         let today = calc.calculateTodayEarnings(at: date, voluntaryOvertimeTotalSeconds: totalOTSeconds)
         return EarningsEntry(
             date: date,
