@@ -406,8 +406,6 @@ struct SettingsView: View {
                     workTotalHours: workTotalHours,
                     onSaved: { saveConfig() }
                 )
-                .presentationDetents([.fraction(0.6)])
-                .presentationDragIndicator(.visible)
             }
 
             Toggle("自动校准每月工作天数", isOn: $useCalibratedWorkDays)
