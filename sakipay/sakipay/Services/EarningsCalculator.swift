@@ -94,6 +94,8 @@ enum WorkStatus {
     case overtime
     case voluntaryOvertime
     case dayOff
+    /// User-armed pause: nothing accrues, regardless of day type or calendar.
+    case paused
 }
 
 struct TodayEarnings {
@@ -192,8 +194,16 @@ final class EarningsCalculator {
     ///   session (accumulated from prior sessions today + elapsed in current session). When > 0,
     ///   the calculator returns `.voluntaryOvertime` with earnings based on this duration at the
     ///   normal secondRate. Pass 0 when no voluntary OT session is active.
+    /// - Parameter isPaused: User-armed pause. When true, nothing accrues at all — the calendar
+    ///   and any day overrides are ignored entirely, so this is checked before the day-off test.
     func calculateTodayEarnings(at date: Date = Date(),
-                                voluntaryOvertimeTotalSeconds: Double = 0) -> TodayEarnings {
+                                voluntaryOvertimeTotalSeconds: Double = 0,
+                                isPaused: Bool = false) -> TodayEarnings {
+        if isPaused {
+            return TodayEarnings(amount: 0, progress: 0, status: .paused,
+                                 elapsedSeconds: 0, totalWorkSeconds: totalWorkSeconds)
+        }
+
         guard !isDayOff(date) else {
             return TodayEarnings(amount: 0, progress: 0, status: .dayOff,
                                  elapsedSeconds: 0, totalWorkSeconds: totalWorkSeconds)
@@ -280,12 +290,14 @@ final class EarningsCalculator {
                              totalWorkSeconds: effectiveTotalSeconds)
     }
 
-    func calculateMonthSummary(at date: Date = Date()) -> MonthSummary {
+    /// - Parameter isPaused: When true, today contributes nothing to the month totals — a paused
+    ///   day is treated as earning zero, matching `calculateTodayEarnings`.
+    func calculateMonthSummary(at date: Date = Date(), isPaused: Bool = false) -> MonthSummary {
         let workingDays = countWorkingDaysInMonth(date)
         let elapsedDays = countElapsedWorkingDays(date)
         let monthProgress = workingDays > 0 ? Double(elapsedDays) / Double(workingDays) : 0
-        let monthEarnings = calculateElapsedMonthEarnings(date)
-        let totalMonthEarnings = calculateTotalMonthEarnings(date)
+        let monthEarnings = calculateElapsedMonthEarnings(date, isPaused: isPaused)
+        let totalMonthEarnings = calculateTotalMonthEarnings(date, isPaused: isPaused)
         let paydayInfo = calculatePayday(from: date)
         let cycleInfo = calculatePaydayCycle(from: date)
 
@@ -362,7 +374,8 @@ final class EarningsCalculator {
     }
 
     /// Sums the earnings for every elapsed working day in the month (including today if working).
-    private func calculateElapsedMonthEarnings(_ date: Date) -> Double {
+    /// When paused, today is skipped so a paused day contributes nothing.
+    private func calculateElapsedMonthEarnings(_ date: Date, isPaused: Bool) -> Double {
         guard let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else {
             return 0
         }
@@ -370,7 +383,10 @@ final class EarningsCalculator {
         var total: Double = 0
         var current = monthStart
         while current <= today {
-            total += dailyEarnings(for: current)
+            let isToday = calendar.isDate(current, inSameDayAs: today)
+            if !(isPaused && isToday) {
+                total += dailyEarnings(for: current)
+            }
             guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
             current = next
         }
@@ -378,14 +394,17 @@ final class EarningsCalculator {
     }
 
     /// Sums the earnings for every working day in the entire month.
-    private func calculateTotalMonthEarnings(_ date: Date) -> Double {
+    /// When paused, today is skipped so a paused day contributes nothing.
+    private func calculateTotalMonthEarnings(_ date: Date, isPaused: Bool) -> Double {
         guard let range = calendar.range(of: .day, in: .month, for: date),
               let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) else {
             return 0
         }
+        let today = calendar.startOfDay(for: date)
         var total: Double = 0
         for day in range {
             guard let dayDate = calendar.date(byAdding: .day, value: day - 1, to: monthStart) else { continue }
+            if isPaused && calendar.isDate(dayDate, inSameDayAs: today) { continue }
             total += dailyEarnings(for: dayDate)
         }
         return total

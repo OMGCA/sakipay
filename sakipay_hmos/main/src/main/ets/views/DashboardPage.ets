@@ -10,6 +10,17 @@ import curves from '@ohos.curves'
 type NavCallback = () => void
 
 /**
+ * Status-badge action icons. Every glyph in the badge is drawn through
+ * SymbolGlyph at BADGE_ICON_SIZE and centred in a BADGE_ICON_BOX, so all three
+ * share one optical centre and one advance. Drawing one of them with a Text
+ * glyph instead (as the pause switch used to, via IconFont) breaks that: text
+ * sits on a baseline with different metrics, so its bars rendered taller and
+ * heavier than the symbols beside it.
+ */
+const BADGE_ICON_SIZE: number = 14
+const BADGE_ICON_BOX: number = 18
+
+/**
  * Dashboard page — live earnings counter, month progress, payday countdown.
  * Spring-animated counter, breathing status dot, staggered card entrance.
  */
@@ -148,45 +159,73 @@ export struct DashboardPage {
       if (this.viewModel.todayStatus === WorkStatus.COMPLETED ||
           this.viewModel.todayStatus === WorkStatus.VOLUNTARY_OVERTIME) {
         Row() {
-          if (this.viewModel.todayStatus === WorkStatus.VOLUNTARY_OVERTIME) {
-            SymbolGlyph($r('sys.symbol.clock_fill'))
-              .fontSize(14)
-              .fontColor([this.getStatusColor()])
-          } else {
-            SymbolGlyph($r('sys.symbol.clock'))
-              .fontSize(14)
-              .fontColor([$r('app.color.text_secondary')])
-          }
+          SymbolGlyph(this.viewModel.todayStatus === WorkStatus.VOLUNTARY_OVERTIME
+            ? $r('sys.symbol.clock_fill')
+            : $r('sys.symbol.clock'))
+            .fontSize(BADGE_ICON_SIZE)
+            .fontColor([this.viewModel.todayStatus === WorkStatus.VOLUNTARY_OVERTIME
+              ? this.getStatusColor()
+              : $r('app.color.text_secondary')])
         }
+        .width(BADGE_ICON_BOX)
+        .height(BADGE_ICON_BOX)
+        .justifyContent(FlexAlign.Center)
         .onClick(() => {
           this.viewModel.toggleVoluntaryOvertime()
         })
       }
 
+      // Pause switch — the same control arms and disarms pause mode.
+      // Shows a play glyph while paused to signal that tapping resumes.
       Row() {
-        if (this.viewModel.isPrivacyMode) {
-          SymbolGlyph($r('sys.symbol.eye_slash'))
-            .fontSize(14)
-            .fontColor([$r('app.color.accent_orange')])
-        } else {
-          SymbolGlyph($r('sys.symbol.eye'))
-            .fontSize(14)
-            .fontColor([$r('app.color.text_secondary')])
-        }
+        SymbolGlyph(this.viewModel.isPaused
+          ? $r('sys.symbol.play_fill')
+          : $r('sys.symbol.pause_fill'))
+          .fontSize(BADGE_ICON_SIZE)
+          .fontColor([this.viewModel.isPaused
+            ? $r('app.color.status_paused')
+            : $r('app.color.text_secondary')])
       }
+      .width(BADGE_ICON_BOX)
+      .height(BADGE_ICON_BOX)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        this.viewModel.togglePause()
+      })
+
+      Row() {
+        SymbolGlyph(this.viewModel.isPrivacyMode
+          ? $r('sys.symbol.eye_slash')
+          : $r('sys.symbol.eye'))
+          .fontSize(BADGE_ICON_SIZE)
+          .fontColor([this.viewModel.isPrivacyMode
+            ? $r('app.color.accent_orange')
+            : $r('app.color.text_secondary')])
+      }
+      .width(BADGE_ICON_BOX)
+      .height(BADGE_ICON_BOX)
+      .justifyContent(FlexAlign.Center)
       .onClick(() => {
         this.viewModel.togglePrivacy()
       })
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-    .borderRadius(12)
+    .backgroundColor(this.getStatusTint())
+    .borderRadius(16)
   }
 
   @Builder
   private earningsCounter(): void {
     Row() {
-      if (this.viewModel.todayStatus === WorkStatus.DAY_OFF) {
+      if (this.viewModel.todayStatus === WorkStatus.PAUSED) {
+        // Pause overrides every other state — show the paused glyph in place of the amount
+        IconFontView({
+          code: IconFont.PAUSE,
+          iconSize: 30,
+          iconColor: $r('app.color.status_paused')
+        })
+      } else if (this.viewModel.todayStatus === WorkStatus.DAY_OFF) {
         Text('🏖️')
           .fontSize(36)
       } else if (this.viewModel.isPrivacyMode) {
@@ -246,11 +285,19 @@ export struct DashboardPage {
           .fontColor([$r('app.color.status_overtime')])
 
         Column({ space: 4 }) {
-          Text('公司欠你')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
+          if (this.viewModel.isPrivacyMode) {
+            Text('***')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.status_overtime'))
+          } else {
+            Text(this.viewModel.currency + this.viewModel.getVoluntaryOTWeeklyText())
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.status_overtime'))
+          }
 
-          Text('本周自愿加班累计 ' + this.viewModel.currency + this.viewModel.getVoluntaryOTWeeklyText())
+          Text('公司欠你 · 本周自愿加班累计')
             .fontSize(12)
             .fontColor($r('app.color.text_secondary'))
         }
@@ -502,6 +549,34 @@ export struct DashboardPage {
 
   // ---- Helpers ----
 
+  /**
+   * The badge background — the status colour at 10% alpha, so the pill carries
+   * the same hue as the dot and the progress bar in every state. Mirrors iOS
+   * `statusColor.opacity(0.1)`, but ArkTS cannot alpha a `$r(...)` resource at
+   * runtime, so each tint is a token with the alpha baked in (same approach as
+   * the `calendar_*_bg` colours). Keep this switch in step with getStatusColor().
+   */
+  private getStatusTint(): ResourceColor {
+    switch (this.viewModel.todayStatus) {
+      case WorkStatus.WORKING:
+        return $r('app.color.status_working_tint')
+      case WorkStatus.ON_BREAK:
+        return $r('app.color.status_break_tint')
+      case WorkStatus.COMPLETED:
+        return $r('app.color.status_completed_tint')
+      case WorkStatus.OVERTIME:
+        return $r('app.color.status_overtime_tint')
+      case WorkStatus.VOLUNTARY_OVERTIME:
+        return $r('app.color.status_overtime_tint')
+      case WorkStatus.DAY_OFF:
+        return $r('app.color.status_dayoff_tint')
+      case WorkStatus.PAUSED:
+        return $r('app.color.status_paused_tint')
+      default:
+        return $r('app.color.status_inactive_tint')
+    }
+  }
+
   private getStatusColor(): ResourceColor {
     switch (this.viewModel.todayStatus) {
       case WorkStatus.WORKING:
@@ -516,6 +591,8 @@ export struct DashboardPage {
         return $r('app.color.status_overtime')
       case WorkStatus.DAY_OFF:
         return $r('app.color.status_dayoff')
+      case WorkStatus.PAUSED:
+        return $r('app.color.status_paused')
       default:
         return $r('app.color.status_inactive')
     }

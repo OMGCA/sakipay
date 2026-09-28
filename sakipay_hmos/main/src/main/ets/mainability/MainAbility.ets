@@ -2,8 +2,9 @@
 import { AbilityConstant, ConfigurationConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
 import { window } from '@kit.ArkUI'
-import { formProvider, formBindingData, formInfo } from '@kit.FormKit'
 import { PreferencesStore, ConfigData } from '../services/PreferencesStore'
+import { FormRefresher } from '../services/FormRefresher'
+import { WindowInsets } from '../services/WindowInsets'
 import { EarningsCalculator, BreakScheduleEntry } from '../models/EarningsCalculator'
 
 const DOMAIN: number = 0x0000
@@ -34,9 +35,21 @@ export default class MainAbility extends UIAbility {
 
     const mainWindow: window.Window | undefined = windowStage.getMainWindowSync()
     if (mainWindow !== undefined) {
+      // Read the launch colour mode here. onConfigurationUpdate only fires on a
+      // *change*, so a device already in dark mode when the app starts never
+      // triggers it and the bars would be themed light against a black UI.
+      const launchConfig: Configuration = this.context.config
+      if (launchConfig.colorMode !== undefined) {
+        this.currentColorMode = launchConfig.colorMode
+      }
+
       mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
         hilog.error(DOMAIN, 'testTag', 'Failed to set full screen layout: %{public}s', err.message)
       })
+      // Must run before loadContent, not from its callback: this publishes the
+      // bottom inset the tab bars read on their first build, and gets the system
+      // bars configured before the first frame is drawn rather than a frame later.
+      this.applyImmersiveBars(windowStage)
     }
 
     windowStage.loadContent('pages/Index', (err) => {
@@ -45,7 +58,6 @@ export default class MainAbility extends UIAbility {
         return
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.')
-      this.applyImmersiveBars(windowStage)
     })
   }
 
@@ -64,10 +76,6 @@ export default class MainAbility extends UIAbility {
 
   private async updateWidgets(): Promise<void> {
     try {
-      const runningForms: formInfo.RunningFormInfo[] = await formProvider.getPublishedRunningFormInfos()
-      if (runningForms.length === 0) {
-        return
-      }
       const store: PreferencesStore = new PreferencesStore()
       await store.initialise(this.context)
       const config: ConfigData = await store.loadConfig()
@@ -77,6 +85,7 @@ export default class MainAbility extends UIAbility {
       const currency: string = config.currency
 
       const isVoluntaryOT: boolean = await store.loadVoluntaryOTActive()
+      const isPaused: boolean = await store.loadPauseMode()
       const totalOTSeconds: number = await store.voluntaryOvertimeTotalSeconds()
 
       if (config.monthlyPay > 0) {
@@ -88,7 +97,7 @@ export default class MainAbility extends UIAbility {
         calc.schedule.workStartMinutes = config.workStartHour * 60 + config.workStartMinute
         calc.schedule.workEndMinutes = config.workEndHour * 60 + config.workEndMinute
         calc.schedule.breaks = this.parseBreaksForWidget(config.breaksJSON)
-        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
+        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds, isPaused)
         amount = today.amount.toFixed(2)
         progress = today.progress
         status = today.status as string
@@ -104,11 +113,7 @@ export default class MainAbility extends UIAbility {
         'cardPrivacy': isPrivacy ? '1' : '0',
         'cardVoluntaryOT': isVoluntaryOT ? '1' : '0'
       }
-      const fbData: formBindingData.FormBindingData = formBindingData.createFormBindingData(data)
-      for (const f of runningForms) {
-        await formProvider.updateForm(f.formId, fbData)
-        hilog.info(DOMAIN, 'testTag', `Widget updated: ${f.formId}`)
-      }
+      await FormRefresher.refreshForms(store, data)
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Widget update failed: %{public}s', JSON.stringify(err))
     }
@@ -154,19 +159,47 @@ export default class MainAbility extends UIAbility {
     }
   }
 
+  /**
+   * Publishes the bottom navigation inset (in px) for the tab bars to consume.
+   *
+   * Kept in AppStorage rather than read from the components because the tab bars
+   * need it on their first build, and window.getLastWindow() is asynchronous —
+   * resolving it from inside a component lands too late. Re-published on
+   * configuration change, since the inset shifts with rotation and fold state.
+   */
+  private publishBottomInset(mainWindow: window.Window): void {
+    const px: number = WindowInsets.bottomPx(mainWindow)
+    AppStorage.setOrCreate('bottomInsetPx', px)
+    hilog.info(DOMAIN, 'testTag', 'Bottom navigation inset: %{public}d px', px)
+  }
+
   private applyImmersiveBars(windowStage: window.WindowStage): void {
     const mainWindow: window.Window | undefined = windowStage.getMainWindowSync()
     if (mainWindow === undefined) {
       return
     }
 
+    this.publishBottomInset(mainWindow)
+
     const isDark: boolean = this.currentColorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
 
+    // Transparent bars, never painted ones. The window lays out full-screen, so
+    // whatever the page draws is already behind these regions — painting an opaque
+    // colour turns the bar into a plate that ignores it. That showed up as the status
+    // bar sitting on a fixed grey over every page, and as dragging the control centre
+    // down dimming the app content while the bar went stark white instead of dimming
+    // with it.
+    //
+    // The glyph colour is set explicitly rather than through isStatusBarLightIcon:
+    // that flag only selects HarmonyOS's default "dark" variant, which renders
+    // mid-grey and reads washed out next to the true black iOS draws on the very same
+    // page background. Setting the content colour also overrides the light-icon flags,
+    // so those are deliberately absent rather than left in as dead config.
     mainWindow.setWindowSystemBarProperties({
-      statusBarColor: isDark ? '#000000' : '#F2F2F7',
-      navigationBarColor: isDark ? '#000000' : '#F2F2F7',
-      isStatusBarLightIcon: isDark,
-      isNavigationBarLightIcon: isDark
+      statusBarColor: '#00000000',
+      navigationBarColor: '#00000000',
+      statusBarContentColor: isDark ? '#FFFFFFFF' : '#FF000000',
+      navigationBarContentColor: isDark ? '#FFFFFFFF' : '#FF000000'
     }).catch((err: Error) => {
       hilog.error(DOMAIN, 'testTag', 'Failed to set system bar: %{public}s', err.message)
     })

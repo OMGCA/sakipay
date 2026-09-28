@@ -4,21 +4,40 @@ import SwiftData
 
 // MARK: - Time Wheel
 
+/// Two side-by-side wheel pickers (hour : minute).
+///
+/// Each wheel is driven from an explicit array of values so that every row is
+/// produced by exactly one tagged view. Two shapes of picker content crash
+/// SwiftUI at runtime with "Unexpectedly found nil while unwrapping an Optional
+/// value" inside `ForEachState.item(at:offset:)` / `TagIndexProjection`:
+///   1. a `ForEach` that conditionally emits rows (e.g. a range with an inline
+///      `if`), which leaves untagged gaps between the tagged rows; and
+///   2. a `selection` value that matches no `.tag(_:)` in the content.
+/// `normalizeSelection()` guards against the second, and `hourRange` lets the
+/// end-time wheel offer 24:00 for cross-midnight breaks.
 struct TimeWheel: View {
     @Binding var hour: Int
     @Binding var minute: Int
     let minuteStep: Int
+    let hourRange: ClosedRange<Int>
 
-    init(hour: Binding<Int>, minute: Binding<Int>, minuteStep: Int = 5) {
+    init(hour: Binding<Int>,
+         minute: Binding<Int>,
+         minuteStep: Int = 5,
+         hourRange: ClosedRange<Int> = 0...23) {
         self._hour = hour
         self._minute = minute
         self.minuteStep = max(1, minuteStep)
+        self.hourRange = hourRange
     }
+
+    private var hourOptions: [Int] { Array(hourRange) }
+    private var minuteOptions: [Int] { Array(stride(from: 0, to: 60, by: minuteStep)) }
 
     var body: some View {
         HStack(spacing: 2) {
             Picker("时", selection: $hour) {
-                ForEach(0..<24, id: \.self) { h in
+                ForEach(hourOptions, id: \.self) { h in
                     Text(String(format: "%02d", h)).tag(h)
                 }
             }
@@ -32,15 +51,29 @@ struct TimeWheel: View {
                 .padding(.horizontal, 2)
 
             Picker("分", selection: $minute) {
-                ForEach(0..<60, id: \.self) { m in
-                    if m % minuteStep == 0 {
-                        Text(String(format: "%02d", m)).tag(m)
-                    }
+                ForEach(minuteOptions, id: \.self) { m in
+                    Text(String(format: "%02d", m)).tag(m)
                 }
             }
             .pickerStyle(.wheel)
             .frame(width: 56, height: 100)
             .clipped()
+        }
+        .onAppear(perform: normalizeSelection)
+        .onChange(of: hour) { _, _ in normalizeSelection() }
+        .onChange(of: minute) { _, _ in normalizeSelection() }
+    }
+
+    /// Snaps the bound values onto the wheels' grids so the picker's selection
+    /// always corresponds to a real row. Writing only when a value is off-grid
+    /// keeps this from looping.
+    private func normalizeSelection() {
+        if !hourOptions.contains(hour) {
+            hour = min(max(hour, hourRange.lowerBound), hourRange.upperBound)
+        }
+        if !minuteOptions.contains(minute) {
+            let snapped = (minute / minuteStep) * minuteStep
+            minute = min(max(snapped, 0), minuteOptions.last ?? 0)
         }
     }
 }
@@ -296,7 +329,9 @@ struct SettingsView: View {
 
                 VStack(spacing: 2) {
                     Text("结束").font(.caption2).foregroundStyle(.tertiary)
-                    TimeWheel(hour: segment.endHour, minute: segment.endMinute)
+                    // A cross-midnight break can end at 24:00, so the end wheel
+                    // offers hour 24 in addition to 0...23.
+                    TimeWheel(hour: segment.endHour, minute: segment.endMinute, hourRange: 0...24)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -371,8 +406,6 @@ struct SettingsView: View {
                     workTotalHours: workTotalHours,
                     onSaved: { saveConfig() }
                 )
-                .presentationDetents([.fraction(0.6)])
-                .presentationDragIndicator(.visible)
             }
 
             Toggle("自动校准每月工作天数", isOn: $useCalibratedWorkDays)
@@ -455,7 +488,7 @@ struct SettingsView: View {
             HStack {
                 Text("版本")
                 Spacer()
-                Text("0.1.0")
+                Text("0.1.2")
             }
         }
     }

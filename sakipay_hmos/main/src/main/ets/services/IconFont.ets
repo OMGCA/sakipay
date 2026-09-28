@@ -44,6 +44,12 @@ export class IconFont {
 
   /** Filled circle / privacy on — hidden */
   public static readonly EYE_SLASH: string = '●'
+
+  /** Two heavy vertical bars / pause */
+  public static readonly PAUSE: string = '❚❚'
+
+  /** Small right-pointing triangle / play / resume */
+  public static readonly PLAY: string = '▸'
 }
 
 /**

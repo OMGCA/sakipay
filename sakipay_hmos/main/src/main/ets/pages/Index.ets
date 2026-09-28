@@ -1,30 +1,32 @@
 /* (c) Copyright XiatStudio 2026~2026 */
 import { DashboardViewModel } from '../viewmodels/DashboardViewModel'
 import { SettingsViewModel } from '../viewmodels/SettingsViewModel'
-import { DashboardPage } from '../views/DashboardPage'
-import { SettingsPage } from '../views/SettingsPage'
 import { BreakSegment } from '../models/BreakSegment'
 import { DayOverride, DayType, HolidayCalendarData } from '../models/HolidayCalendar'
 import { HolidayCalendarService } from '../services/HolidayCalendarService'
 import { Log } from '../services/Log'
 import { PreferencesStore, ConfigData } from '../services/PreferencesStore'
 import { EarningsCalculator, BreakScheduleEntry } from '../models/EarningsCalculator'
-import { formProvider, formBindingData, formInfo } from '@kit.FormKit'
-import { HdsTabs, HdsTabsController } from '@kit.UIDesignKit'
+import { DeviceCapabilities } from '../services/DeviceCapabilities'
+import { FormRefresher } from '../services/FormRefresher'
 import { CalendarSheetPage } from '../views/CalendarSheetPage'
+import { NativeTabsHost } from '../components/NativeTabsHost'
+// Lazily imported: keeps @kit.UIDesignKit (API 20+) from ever resolving on older devices.
+import lazy { HdsTabsHost } from '../components/HdsTabsHost'
 
 @Entry
 @ComponentV2
 struct Index {
   @Local public dashboardVM: DashboardViewModel = new DashboardViewModel()
   @Local public settingsVM: SettingsViewModel = new SettingsViewModel()
-  @Local private tabsController: HdsTabsController = new HdsTabsController()
-  @Local private activeIndex: number = 0
+  // Chosen once from the device API level — see services/DeviceCapabilities.ets
+  @Local private useHdsTabs: boolean = false
   @Local private showCalendar: boolean = false
   @Local private calendarPopupOpacity: number = 0
   @Local private holidayCalendar: HolidayCalendarData | null = null
 
   public aboutToAppear(): void {
+    this.useHdsTabs = DeviceCapabilities.supportsHdsTabs()
     let ctx: Context | undefined = this.getUIContext().getHostContext()
     if (ctx === undefined) {
       ctx = AppStorage.get<Context>('abilityContext')
@@ -52,6 +54,9 @@ struct Index {
         })
       this.dashboardVM.initialise(appCtx).then((): void => {
         this.dashboardVM.onPrivacyToggled = (): void => {
+          this.refreshWidgets(appCtx)
+        }
+        this.dashboardVM.onPauseToggled = (): void => {
           this.refreshWidgets(appCtx)
         }
         this.dashboardVM.onVoluntaryOvertimeToggled = (): void => {
@@ -85,23 +90,26 @@ struct Index {
 
   public build(): void {
     Stack() {
-      HdsTabs({ controller: this.tabsController }) {
-      TabContent() {
-        DashboardPage({
-          viewModel: this.dashboardVM,
-          onNavigateToSettings: (): void => {
-            this.tabsController.changeIndex(1)
-          }
-        })
-      }
-      .tabBar(this.homeTab)
-
-      TabContent() {
-        SettingsPage({
-          viewModel: this.settingsVM,
+      if (this.useHdsTabs) {
+        HdsTabsHost({
+          dashboardVM: this.dashboardVM,
+          settingsVM: this.settingsVM,
           onSaved: (): void => {
             this.applyConfigToDashboard()
-            this.tabsController.changeIndex(0)
+          },
+          onCalendarSaved: (): void => {
+            this.applyConfigToDashboard()
+          },
+          onShowCalendar: (): void => {
+            this.onShowCalendar()
+          }
+        })
+      } else {
+        NativeTabsHost({
+          dashboardVM: this.dashboardVM,
+          settingsVM: this.settingsVM,
+          onSaved: (): void => {
+            this.applyConfigToDashboard()
           },
           onCalendarSaved: (): void => {
             this.applyConfigToDashboard()
@@ -111,26 +119,6 @@ struct Index {
           }
         })
       }
-      .tabBar(this.settingsTab)
-    }
-    .barOverlap(true)
-    .barPosition(BarPosition.End)
-    .vertical(false)
-    .onChange((index: number): void => {
-      this.activeIndex = index
-    })
-    .barFloatingStyle({
-      barWidth: { smallWidth: 148, mediumWidth: 180, largeWidth: 212 },
-      barBottomMargin: 28,
-      gradientMask: { maskColor: $r('app.color.page_background'), maskHeight: 92 },
-      systemMaterialEffect: {
-        materialType: 100,
-        materialLevel: 10
-      }
-    })
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.page_background'))
 
       // Calendar popup overlay (above tab bar)
       if (this.showCalendar) {
@@ -179,40 +167,6 @@ struct Index {
     }
   }
 
-  @Builder
-  private homeTab(): void {
-    Column({ space: 2 }) {
-      SymbolGlyph(this.activeIndex === 0 ? $r('sys.symbol.house_fill') : $r('sys.symbol.house'))
-        .fontSize(20)
-        .fontColor([this.activeIndex === 0 ? $r('app.color.accent_blue') : $r('app.color.text_tertiary')])
-      Text('今日')
-        .fontSize(10)
-        .fontWeight(this.activeIndex === 0 ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(this.activeIndex === 0 ? $r('app.color.accent_blue') : $r('app.color.text_tertiary'))
-    }
-    .width(68)
-    .height(48)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  private settingsTab(): void {
-    Column({ space: 2 }) {
-      SymbolGlyph(this.activeIndex === 1 ? $r('sys.symbol.gearshape_fill') : $r('sys.symbol.gearshape'))
-        .fontSize(20)
-        .fontColor([this.activeIndex === 1 ? $r('app.color.accent_blue') : $r('app.color.text_tertiary')])
-      Text('设置')
-        .fontSize(10)
-        .fontWeight(this.activeIndex === 1 ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(this.activeIndex === 1 ? $r('app.color.accent_blue') : $r('app.color.text_tertiary'))
-    }
-    .width(68)
-    .height(48)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-  }
-
   private applyConfigToDashboard(): void {
     const breaks: BreakSegment[] = this.settingsVM.breakSegments
     const holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
@@ -242,15 +196,12 @@ struct Index {
    */
   private async refreshWidgets(ctx: Context): Promise<void> {
     try {
-      const runningForms: formInfo.RunningFormInfo[] = await formProvider.getPublishedRunningFormInfos()
-      if (runningForms.length === 0) {
-        return
-      }
       const store: PreferencesStore = new PreferencesStore()
       await store.initialise(ctx)
       const config: ConfigData = await store.loadConfig()
       const isPrivacy: boolean = await store.loadPrivacyMode()
       const isVoluntaryOT: boolean = await store.loadVoluntaryOTActive()
+      const isPaused: boolean = await store.loadPauseMode()
       const totalOTSeconds: number = await store.voluntaryOvertimeTotalSeconds()
 
       let amount: string = '0.00'
@@ -279,7 +230,7 @@ struct Index {
         // Load day overrides
         this.loadDayOverridesForWidget(calc, config.dayOverridesJSON)
 
-        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
+        const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds, isPaused)
         amount = today.amount.toFixed(2)
         progress = today.progress
         status = today.status as string
@@ -293,10 +244,7 @@ struct Index {
         'cardPrivacy': isPrivacy ? '1' : '0',
         'cardVoluntaryOT': isVoluntaryOT ? '1' : '0'
       }
-      const fbData: formBindingData.FormBindingData = formBindingData.createFormBindingData(data)
-      for (const f of runningForms) {
-        await formProvider.updateForm(f.formId, fbData)
-      }
+      await FormRefresher.refreshForms(store, data)
     } catch (err) {
       Log.error(`Widget refresh failed: ${err}`)
     }

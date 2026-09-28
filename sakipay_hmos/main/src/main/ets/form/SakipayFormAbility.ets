@@ -40,11 +40,12 @@ export default class SakipayFormAbility extends FormExtensionAbility {
       let cardCurrency: string = config.currency
 
       const isVoluntaryOT: boolean = await this.store.loadVoluntaryOTActive()
+      const isPaused: boolean = await this.store.loadPauseMode()
       const totalOTSeconds: number = await this.store.voluntaryOvertimeTotalSeconds()
 
       if (config.monthlyPay > 0) {
         const calc: EarningsCalculator = this.buildCalculator(config)
-        const today: TodayEarnings = calc.calculateTodayEarnings(new Date(), totalOTSeconds)
+        const today: TodayEarnings = calc.calculateTodayEarnings(new Date(), totalOTSeconds, isPaused)
         cardAmount = today.amount.toFixed(2)
         cardProgress = today.progress
         cardStatus = today.status as string

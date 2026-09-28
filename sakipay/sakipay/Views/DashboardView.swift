@@ -9,6 +9,10 @@ struct DashboardView: View {
         colorScheme == .dark ? Color(white: 0.12) : Color(.systemBackground)
     }
 
+    /// Overtime red — matches the `.overtime` / `.voluntaryOvertime` cases of
+    /// `DashboardViewModel.statusColor`, so the OT card and the OT status badge agree.
+    private let overtimeRed = Color(red: 0.78, green: 0.35, blue: 0.35)
+
     var body: some View {
         if vm.isConfigured {
             configuredView
@@ -76,6 +80,16 @@ struct DashboardView: View {
                 }
             }
 
+            // Pause switch — the same control arms and disarms pause mode.
+            // Shows a play glyph while paused to signal that tapping resumes.
+            Button {
+                vm.togglePause()
+            } label: {
+                Image(systemName: vm.isPaused ? "play.circle.fill" : "pause.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(vm.isPaused ? vm.statusColor : .secondary)
+            }
+
             Button {
                 vm.togglePrivacy()
             } label: {
@@ -99,7 +113,12 @@ struct DashboardView: View {
 
     private var earningsCounter: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            if vm.todayStatus == .dayOff {
+            if vm.todayStatus == .paused {
+                // Pause overrides every other state — show the paused glyph in place of the amount
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 40, weight: .bold))
+                    .foregroundStyle(vm.statusColor)
+            } else if vm.todayStatus == .dayOff {
                 Text("🏖️")
                     .font(.system(size: 48))
             } else if vm.isPrivacyMode {
@@ -151,11 +170,18 @@ struct DashboardView: View {
             HStack {
                 Image(systemName: "clock.badge.exclamationmark.fill")
                     .font(.title2)
-                    .foregroundStyle(Color(red: 0.78, green: 0.35, blue: 0.35))
+                    .foregroundStyle(overtimeRed)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("公司欠你")
-                        .font(.headline)
-                    Text("本周自愿加班累计 \(vm.currency)\(weeklyText)")
+                    if vm.isPrivacyMode {
+                        Text("***")
+                            .font(.headline)
+                            .foregroundStyle(overtimeRed)
+                    } else {
+                        Text("\(vm.currency)\(weeklyText)")
+                            .font(.headline)
+                            .foregroundStyle(overtimeRed)
+                    }
+                    Text("公司欠你 · 本周自愿加班累计")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

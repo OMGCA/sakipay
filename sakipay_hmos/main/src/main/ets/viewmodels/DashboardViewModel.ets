@@ -19,6 +19,7 @@ export class DashboardViewModel {
   @Trace public isConfigured: boolean = false
   @Trace public monthSummary: MonthSummary = new MonthSummary()
   @Trace public isPrivacyMode: boolean = false
+  @Trace public isPaused: boolean = false
   @Trace public isVoluntaryOvertimeActive: boolean = false
   @Trace public voluntaryOTWeeklyEarnings: number = 0
 
@@ -29,12 +30,15 @@ export class DashboardViewModel {
 
   /** Callback invoked after privacy toggle — wired to widget refresh in Index. */
   public onPrivacyToggled: (() => void) | null = null
+  /** Callback invoked after pause toggle — wired to widget refresh in Index. */
+  public onPauseToggled: (() => void) | null = null
   /** Callback invoked after voluntary OT toggle — wired to widget refresh in Index. */
   public onVoluntaryOvertimeToggled: (() => void) | null = null
 
   public async initialise(context: Context): Promise<void> {
     await this.store.initialise(context)
     this.isPrivacyMode = await this.store.loadPrivacyMode()
+    this.isPaused = await this.store.loadPauseMode()
     this.isVoluntaryOvertimeActive = await this.store.loadVoluntaryOTActive()
     this.voluntaryOTWeeklyEarnings = await this.store.loadVoluntaryOTWeeklyEarnings()
   }
@@ -44,6 +48,19 @@ export class DashboardViewModel {
     await this.store.savePrivacyMode(this.isPrivacyMode)
     if (this.onPrivacyToggled !== null) {
       this.onPrivacyToggled()
+    }
+  }
+
+  /**
+   * Arms or disarms pause mode. Pause is sticky — it overrides the calendar and every day type
+   * until the user switches it off via this same control.
+   */
+  public async togglePause(): Promise<void> {
+    this.isPaused = !this.isPaused
+    await this.store.savePauseMode(this.isPaused)
+    this.refresh()
+    if (this.onPauseToggled !== null) {
+      this.onPauseToggled()
     }
   }
 
@@ -111,27 +128,30 @@ export class DashboardViewModel {
    * on every call so that widget toggles are picked up by the app.
    */
   public refresh(): void {
-    this.store.loadVoluntaryOTActive().then((isActive: boolean): void => {
-      this.isVoluntaryOvertimeActive = isActive
-      this.store.voluntaryOvertimeTotalSeconds().then((totalOTSeconds: number): void => {
-        const today: TodayEarnings = this.calculator.calculateTodayEarnings(new Date(),
-          totalOTSeconds)
+    this.store.loadPauseMode().then((paused: boolean): void => {
+      this.isPaused = paused
+      this.store.loadVoluntaryOTActive().then((isActive: boolean): void => {
+        this.isVoluntaryOvertimeActive = isActive
+        this.store.voluntaryOvertimeTotalSeconds().then((totalOTSeconds: number): void => {
+          const today: TodayEarnings = this.calculator.calculateTodayEarnings(new Date(),
+            totalOTSeconds, paused)
 
-        // Reset voluntary OT accumulation when a new work day begins
-        // (transition from notStarted to working)
-        if (today.status === WorkStatus.WORKING && this.previousStatus === WorkStatus.NOT_STARTED) {
-          this.store.bankDailyVoluntaryOT(this.calculator.secondRate).then((): void => {
-            this.store.loadVoluntaryOTWeeklyEarnings().then((val: number): void => {
-              this.voluntaryOTWeeklyEarnings = val
+          // Reset voluntary OT accumulation when a new work day begins
+          // (transition from notStarted to working)
+          if (today.status === WorkStatus.WORKING && this.previousStatus === WorkStatus.NOT_STARTED) {
+            this.store.bankDailyVoluntaryOT(this.calculator.secondRate).then((): void => {
+              this.store.loadVoluntaryOTWeeklyEarnings().then((val: number): void => {
+                this.voluntaryOTWeeklyEarnings = val
+              })
             })
-          })
-        }
-        this.previousStatus = today.status
+          }
+          this.previousStatus = today.status
 
-        this.todayAmount = today.amount
-        this.todayProgress = today.progress
-        this.todayStatus = today.status
-        this.monthSummary = this.calculator.calculateMonthSummary()
+          this.todayAmount = today.amount
+          this.todayProgress = today.progress
+          this.todayStatus = today.status
+          this.monthSummary = this.calculator.calculateMonthSummary(new Date(), paused)
+        })
       })
     })
   }
@@ -166,6 +186,8 @@ export class DashboardViewModel {
         return '自愿加班中 😤'
       case WorkStatus.DAY_OFF:
         return '休息日'
+      case WorkStatus.PAUSED:
+        return '已暂停'
       default:
         return ''
     }

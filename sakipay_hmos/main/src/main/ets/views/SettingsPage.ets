@@ -2,7 +2,8 @@
 import { SettingsViewModel } from '../viewmodels/SettingsViewModel'
 import { BreakSegment } from '../models/BreakSegment'
 import { IconFont, IconFontView } from '../services/IconFont'
-import { Vibrator } from '@kit.SensorServiceKit'
+import { vibrator } from '@kit.SensorServiceKit'
+import { BusinessError } from '@kit.BasicServicesKit'
 import { common, Want } from '@kit.AbilityKit'
 
 type SaveCallback = () => void
@@ -25,10 +26,22 @@ export struct SettingsPage {
 
   /**
    * Trigger a short haptic pulse on picker value change.
+   *
+   * Uses the Stage-model vibrator API. The legacy `Vibrator.vibrate({ mode: 'short' })`
+   * form is the FA-model `@system.vibrator` interface and is rejected by the SDK
+   * compile check (error 11706008) on newer toolchains.
    */
   private hapticTick(): void {
     try {
-      Vibrator.vibrate({ mode: 'short', success: (): void => {} })
+      vibrator.startVibration({
+        type: 'time',
+        duration: 40
+      }, {
+        id: 0,
+        usage: 'touch'
+      }).catch((err: BusinessError) => {
+        // Silently ignore — device may lack a vibrator, or the user has haptics off
+      })
     } catch (e) {
       // Silently ignore if vibration is unavailable
     }
@@ -595,7 +608,7 @@ export struct SettingsPage {
       Row() {
         Text('版本').fontSize(14)
         Blank()
-        Text('0.1.0').fontSize(14)
+        Text('0.1.2').fontSize(14)
       }
       .width('100%')
     }

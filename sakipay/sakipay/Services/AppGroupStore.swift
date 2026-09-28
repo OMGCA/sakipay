@@ -10,6 +10,7 @@ final class AppGroupStore {
         case breaksJSON
         case dayOverridesJSON
         case isPrivacyMode
+        case isPaused
         case voluntaryOTActive
         case voluntaryOTAccumulated
         case voluntaryOTDate
@@ -96,6 +97,16 @@ final class AppGroupStore {
         }
     }
 
+    /// User-armed pause. Unlike the voluntary-OT session this is *sticky*: it stays on across
+    /// days, app launches and schedule boundaries until the user switches it off again.
+    var isPaused: Bool {
+        get { defaults?.bool(forKey: Key.isPaused.rawValue) ?? false }
+        set {
+            defaults?.set(newValue, forKey: Key.isPaused.rawValue)
+            defaults?.synchronize()
+        }
+    }
+
     // MARK: - Voluntary Overtime Session State
 
     /// Whether a voluntary OT session is currently active.
@@ -135,18 +146,30 @@ final class AppGroupStore {
         }
     }
 
-    /// Computes the total voluntary OT seconds for the current moment.
-    /// Returns 0 if no session is active or if the stored date doesn't match today.
-    func voluntaryOvertimeTotalSeconds(now: Date = Date(), calendar: Calendar = .current) -> Double {
+    /// Computes the total voluntary OT seconds at the given moment.
+    /// Returns 0 if no session is active or if the stored date doesn't match the queried day.
+    ///
+    /// - Parameter mutatesState: Whether a stale date may reset the persisted session.
+    ///   The default (`true`) is correct when evaluating the *live* current moment: a session
+    ///   left over from a previous day is finished, so its state is cleared.
+    ///   Callers that evaluate **hypothetical future dates** (the widget timeline provider
+    ///   builds entries for upcoming refresh points, including the next day's work start) must
+    ///   pass `false` — otherwise a probe for tomorrow would silently end a session that is
+    ///   still running today, discarding its elapsed time before it can be banked.
+    func voluntaryOvertimeTotalSeconds(now: Date = Date(),
+                                       calendar: Calendar = .current,
+                                       mutatesState: Bool = true) -> Double {
         guard voluntaryOTActive else { return 0 }
 
         let today = dateString(from: now, calendar: calendar)
         if voluntaryOTDate != today {
-            // Stale state from a previous day — reset
-            voluntaryOTActive = false
-            voluntaryOTAccumulated = 0
-            voluntaryOTDate = ""
-            voluntaryOTSessionStart = 0
+            if mutatesState {
+                // Stale state from a previous day — reset
+                voluntaryOTActive = false
+                voluntaryOTAccumulated = 0
+                voluntaryOTDate = ""
+                voluntaryOTSessionStart = 0
+            }
             return 0
         }
 

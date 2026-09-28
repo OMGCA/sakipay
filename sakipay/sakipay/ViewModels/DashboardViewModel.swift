@@ -16,6 +16,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var currency = "¥"
     @Published var isConfigured = false
     @Published var isPrivacyMode = false
+    @Published var isPaused = false
     @Published var isVoluntaryOvertimeActive = false
     @Published var voluntaryOTWeeklyEarnings: Double = 0
 
@@ -27,6 +28,7 @@ final class DashboardViewModel: ObservableObject {
 
     init() {
         isPrivacyMode = store.isPrivacyMode
+        isPaused = store.isPaused
         isVoluntaryOvertimeActive = store.voluntaryOTActive
         voluntaryOTWeeklyEarnings = store.voluntaryOTWeeklyEarnings
     }
@@ -56,8 +58,10 @@ final class DashboardViewModel: ObservableObject {
         guard let calc = calculator else { return }
         // Re-read from store so widget toggles are picked up on next refresh
         isVoluntaryOvertimeActive = store.voluntaryOTActive
+        isPaused = store.isPaused
         let totalOTSeconds = store.voluntaryOvertimeTotalSeconds()
-        let today = calc.calculateTodayEarnings(voluntaryOvertimeTotalSeconds: totalOTSeconds)
+        let today = calc.calculateTodayEarnings(voluntaryOvertimeTotalSeconds: totalOTSeconds,
+                                                isPaused: isPaused)
 
         // Reset voluntary OT accumulation when a new work day begins
         // (transition from notStarted to working)
@@ -72,12 +76,20 @@ final class DashboardViewModel: ObservableObject {
             todayProgress = today.progress
             todayStatus = today.status
         }
-        monthSummary = calc.calculateMonthSummary()
+        monthSummary = calc.calculateMonthSummary(isPaused: isPaused)
     }
 
     func togglePrivacy() {
         isPrivacyMode.toggle()
         store.isPrivacyMode = isPrivacyMode
+    }
+
+    /// Arms or disarms pause mode. Pause is sticky — it overrides the calendar and every day
+    /// type until the user switches it off via this same control.
+    func togglePause() {
+        isPaused.toggle()
+        store.isPaused = isPaused
+        refresh()
     }
 
     /// Toggles voluntary overtime on/off. When starting, begins a new session counting from now.
@@ -120,6 +132,7 @@ final class DashboardViewModel: ObservableObject {
         case .overtime: "加班攒钱中 💪"
         case .voluntaryOvertime: "自愿加班中 😤"
         case .dayOff: "休息日"
+        case .paused: "已暂停"
         }
     }
 
@@ -132,6 +145,7 @@ final class DashboardViewModel: ObservableObject {
         case .overtime: Color(red: 0.78, green: 0.35, blue: 0.35)
         case .voluntaryOvertime: Color(red: 0.78, green: 0.35, blue: 0.35)
         case .dayOff: Color(red: 0.35, green: 0.73, blue: 0.67)
+        case .paused: Color(red: 0.56, green: 0.49, blue: 0.76)
         }
     }
 

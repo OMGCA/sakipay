@@ -12,6 +12,17 @@ enum ResolvedDayType: Equatable {
     case userOvertime(multiplier: Double)
 }
 
+// MARK: - Sheet detents
+
+/// Compact height, used before a day has been picked.
+private let compactSheetDetent: PresentationDetent = .fraction(0.6)
+/// Taller height, grown to automatically once a day is picked so the editor
+/// below the grid is on screen without scrolling for it.
+private let expandedSheetDetent: PresentationDetent = .fraction(0.65)
+/// Inset from the panel's top edge down to the title. The header previously sat
+/// at 16pt, which read as cramped against the top edge.
+private let headerTopInset: CGFloat = 40
+
 // MARK: - Calendar sheet view
 
 struct CalendarSheetView: View {
@@ -26,13 +37,16 @@ struct CalendarSheetView: View {
     @State private var selectedDateString: String = ""
     @State private var selectedDayType: DayType = .normal
     @State private var selectedOvertimeMultiplier: Double = 2.0
+    @State private var sheetDetent: PresentationDetent = compactSheetDetent
 
     private let calendar = Calendar.current
     private let weekdaySymbols: [String] = ["一", "二", "三", "四", "五", "六", "日"]
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // Header — deliberately outside the scroll area. The day cells are
+            // rigid squares, so a growing editor used to take its extra height
+            // out of the header's Text instead, squashing the title.
             HStack {
                 Text("工作日日历")
                     .font(.headline)
@@ -47,15 +61,22 @@ struct CalendarSheetView: View {
             }
             .padding(.bottom, 8)
 
-            monthNavigation
-            weekdayHeader
-            dayGrid
-            Divider().padding(.top, 12)
-            dayTypePicker
+            ScrollView {
+                VStack(spacing: 0) {
+                    monthNavigation
+                    weekdayHeader
+                    dayGrid
+                    Divider().padding(.top, 12)
+                    dayTypePicker
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
         }
         .padding(.horizontal, 12)
-        .padding(.top, 16)
+        .padding(.top, headerTopInset)
         .padding(.bottom, 12)
+        .presentationDetents([compactSheetDetent, expandedSheetDetent], selection: $sheetDetent)
+        .presentationDragIndicator(.visible)
     }
 
     // MARK: - Month navigation
@@ -287,6 +308,9 @@ struct CalendarSheetView: View {
         let ds = dateString(from: date)
         withAnimation(.easeInOut(duration: 0.2)) {
             selectedDateString = ds
+            // Grow the panel so the editor card below the grid is visible
+            // without the user having to scroll for it.
+            sheetDetent = expandedSheetDetent
         }
         if let override = dayOverrides[ds] {
             selectedDayType = override.dayType
