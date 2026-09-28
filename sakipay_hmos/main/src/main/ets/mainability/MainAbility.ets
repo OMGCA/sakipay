@@ -35,11 +35,21 @@ export default class MainAbility extends UIAbility {
 
     const mainWindow: window.Window | undefined = windowStage.getMainWindowSync()
     if (mainWindow !== undefined) {
+      // Read the launch colour mode here. onConfigurationUpdate only fires on a
+      // *change*, so a device already in dark mode when the app starts never
+      // triggers it and the bars would be themed light against a black UI.
+      const launchConfig: Configuration = this.context.config
+      if (launchConfig.colorMode !== undefined) {
+        this.currentColorMode = launchConfig.colorMode
+      }
+
       mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
         hilog.error(DOMAIN, 'testTag', 'Failed to set full screen layout: %{public}s', err.message)
       })
-      // Must be published before loadContent: the tab bars read this on first build.
-      this.publishBottomInset(mainWindow)
+      // Must run before loadContent, not from its callback: this publishes the
+      // bottom inset the tab bars read on their first build, and gets the system
+      // bars configured before the first frame is drawn rather than a frame later.
+      this.applyImmersiveBars(windowStage)
     }
 
     windowStage.loadContent('pages/Index', (err) => {
@@ -48,7 +58,6 @@ export default class MainAbility extends UIAbility {
         return
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.')
-      this.applyImmersiveBars(windowStage)
     })
   }
 
@@ -174,11 +183,23 @@ export default class MainAbility extends UIAbility {
 
     const isDark: boolean = this.currentColorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
 
+    // Transparent bars, never painted ones. The window lays out full-screen, so
+    // whatever the page draws is already behind these regions — painting an opaque
+    // colour turns the bar into a plate that ignores it. That showed up as the status
+    // bar sitting on a fixed grey over every page, and as dragging the control centre
+    // down dimming the app content while the bar went stark white instead of dimming
+    // with it.
+    //
+    // The glyph colour is set explicitly rather than through isStatusBarLightIcon:
+    // that flag only selects HarmonyOS's default "dark" variant, which renders
+    // mid-grey and reads washed out next to the true black iOS draws on the very same
+    // page background. Setting the content colour also overrides the light-icon flags,
+    // so those are deliberately absent rather than left in as dead config.
     mainWindow.setWindowSystemBarProperties({
-      statusBarColor: isDark ? '#000000' : '#F2F2F7',
-      navigationBarColor: isDark ? '#000000' : '#F2F2F7',
-      isStatusBarLightIcon: isDark,
-      isNavigationBarLightIcon: isDark
+      statusBarColor: '#00000000',
+      navigationBarColor: '#00000000',
+      statusBarContentColor: isDark ? '#FFFFFFFF' : '#FF000000',
+      navigationBarContentColor: isDark ? '#FFFFFFFF' : '#FF000000'
     }).catch((err: Error) => {
       hilog.error(DOMAIN, 'testTag', 'Failed to set system bar: %{public}s', err.message)
     })
