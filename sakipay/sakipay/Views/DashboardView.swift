@@ -9,6 +9,10 @@ struct DashboardView: View {
         colorScheme == .dark ? Color(white: 0.12) : Color(.systemBackground)
     }
 
+    /// Overtime red — matches the `.overtime` / `.voluntaryOvertime` cases of
+    /// `DashboardViewModel.statusColor`, so the OT card and the OT status badge agree.
+    private let overtimeRed = Color(red: 0.78, green: 0.35, blue: 0.35)
+
     var body: some View {
         if vm.isConfigured {
             configuredView
@@ -151,11 +155,18 @@ struct DashboardView: View {
             HStack {
                 Image(systemName: "clock.badge.exclamationmark.fill")
                     .font(.title2)
-                    .foregroundStyle(Color(red: 0.78, green: 0.35, blue: 0.35))
+                    .foregroundStyle(overtimeRed)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("公司欠你")
-                        .font(.headline)
-                    Text("本周自愿加班累计 \(vm.currency)\(weeklyText)")
+                    if vm.isPrivacyMode {
+                        Text("***")
+                            .font(.headline)
+                            .foregroundStyle(overtimeRed)
+                    } else {
+                        Text("\(vm.currency)\(weeklyText)")
+                            .font(.headline)
+                            .foregroundStyle(overtimeRed)
+                    }
+                    Text("公司欠你 · 本周自愿加班累计")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

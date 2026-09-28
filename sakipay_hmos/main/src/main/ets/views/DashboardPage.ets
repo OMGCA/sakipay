@@ -246,11 +246,19 @@ export struct DashboardPage {
           .fontColor([$r('app.color.status_overtime')])
 
         Column({ space: 4 }) {
-          Text('公司欠你')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
+          if (this.viewModel.isPrivacyMode) {
+            Text('***')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.status_overtime'))
+          } else {
+            Text(this.viewModel.currency + this.viewModel.getVoluntaryOTWeeklyText())
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.status_overtime'))
+          }
 
-          Text('本周自愿加班累计 ' + this.viewModel.currency + this.viewModel.getVoluntaryOTWeeklyText())
+          Text('公司欠你 · 本周自愿加班累计')
             .fontSize(12)
             .fontColor($r('app.color.text_secondary'))
         }
