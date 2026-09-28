@@ -1,0 +1,31 @@
+# ---- macOS ----
+.DS_Store
+._*
+.AppleDouble
+
+# ---- Xcode ----
+# Per-user IDE state: one developer's scheme management and window layout.
+# xcshareddata/ is deliberately NOT ignored — the shared schemes belong in git.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+DerivedData/
+
+# ---- Claude Code ----
+# Local permissions only. A shared .claude/settings.json would still be tracked.
+.claude/settings.local.json
+
+# ---- HarmonyOS / DevEco ----
+# ohpm regenerates this per machine, so paths and versions differ between macOS
+# and Windows; it churns instead of pinning anything reliably.
+oh-package-lock.json5
+oh_modules/
+.hvigor/
+.cxx/
+local.properties
+.idea/
+
+# ---- Build output ----
+build/
