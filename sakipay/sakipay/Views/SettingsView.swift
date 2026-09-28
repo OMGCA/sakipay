@@ -488,7 +488,7 @@ struct SettingsView: View {
             HStack {
                 Text("版本")
                 Spacer()
-                Text("0.1.1")
+                Text("0.1.2")
             }
         }
     }
