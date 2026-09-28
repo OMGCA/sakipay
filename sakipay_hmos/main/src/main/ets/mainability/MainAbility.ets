@@ -2,8 +2,9 @@
 import { AbilityConstant, ConfigurationConstant, Configuration, UIAbility, Want } from '@kit.AbilityKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
 import { window } from '@kit.ArkUI'
-import { formProvider, formBindingData, formInfo } from '@kit.FormKit'
 import { PreferencesStore, ConfigData } from '../services/PreferencesStore'
+import { FormRefresher } from '../services/FormRefresher'
+import { WindowInsets } from '../services/WindowInsets'
 import { EarningsCalculator, BreakScheduleEntry } from '../models/EarningsCalculator'
 
 const DOMAIN: number = 0x0000
@@ -37,6 +38,8 @@ export default class MainAbility extends UIAbility {
       mainWindow.setWindowLayoutFullScreen(true).catch((err: Error) => {
         hilog.error(DOMAIN, 'testTag', 'Failed to set full screen layout: %{public}s', err.message)
       })
+      // Must be published before loadContent: the tab bars read this on first build.
+      this.publishBottomInset(mainWindow)
     }
 
     windowStage.loadContent('pages/Index', (err) => {
@@ -64,10 +67,6 @@ export default class MainAbility extends UIAbility {
 
   private async updateWidgets(): Promise<void> {
     try {
-      const runningForms: formInfo.RunningFormInfo[] = await formProvider.getPublishedRunningFormInfos()
-      if (runningForms.length === 0) {
-        return
-      }
       const store: PreferencesStore = new PreferencesStore()
       await store.initialise(this.context)
       const config: ConfigData = await store.loadConfig()
@@ -104,11 +103,7 @@ export default class MainAbility extends UIAbility {
         'cardPrivacy': isPrivacy ? '1' : '0',
         'cardVoluntaryOT': isVoluntaryOT ? '1' : '0'
       }
-      const fbData: formBindingData.FormBindingData = formBindingData.createFormBindingData(data)
-      for (const f of runningForms) {
-        await formProvider.updateForm(f.formId, fbData)
-        hilog.info(DOMAIN, 'testTag', `Widget updated: ${f.formId}`)
-      }
+      await FormRefresher.refreshForms(store, data)
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Widget update failed: %{public}s', JSON.stringify(err))
     }
@@ -154,11 +149,27 @@ export default class MainAbility extends UIAbility {
     }
   }
 
+  /**
+   * Publishes the bottom navigation inset (in px) for the tab bars to consume.
+   *
+   * Kept in AppStorage rather than read from the components because the tab bars
+   * need it on their first build, and window.getLastWindow() is asynchronous —
+   * resolving it from inside a component lands too late. Re-published on
+   * configuration change, since the inset shifts with rotation and fold state.
+   */
+  private publishBottomInset(mainWindow: window.Window): void {
+    const px: number = WindowInsets.bottomPx(mainWindow)
+    AppStorage.setOrCreate('bottomInsetPx', px)
+    hilog.info(DOMAIN, 'testTag', 'Bottom navigation inset: %{public}d px', px)
+  }
+
   private applyImmersiveBars(windowStage: window.WindowStage): void {
     const mainWindow: window.Window | undefined = windowStage.getMainWindowSync()
     if (mainWindow === undefined) {
       return
     }
+
+    this.publishBottomInset(mainWindow)
 
     const isDark: boolean = this.currentColorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
 

@@ -7,11 +7,11 @@
         "material": {
           "certpath": "/Users/sebastianx/.ohos/config/default_sakipay_hmos_AMcnjaSPnq62pfu8pS_0YmPUG2K-YHGTUbOdXB0HPm4=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001BB9B7CAEECF3D0506E3CC9DABF4097D0255C9BA79A9C254B8ABA8452A36AB1E7E53398104B9FE6F",
+          "keyPassword": "0000001B03051A3EE652EC0139EBB180949EF10E6A41DB0F7B46D48FDA5D25C3587630B45ABD03DB325DEB",
           "profile": "/Users/sebastianx/.ohos/config/default_sakipay_hmos_AMcnjaSPnq62pfu8pS_0YmPUG2K-YHGTUbOdXB0HPm4=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "/Users/sebastianx/.ohos/config/default_sakipay_hmos_AMcnjaSPnq62pfu8pS_0YmPUG2K-YHGTUbOdXB0HPm4=.p12",
-          "storePassword": "0000001BDC64790DA009FE7F5C138D3E26667D6E556B9644638A8A9CBE68670C62BF0981897306BC80974F"
+          "storePassword": "0000001B09335FE9AA122DED3B0B7A17E1EDFAB5B511D3A9A4A46FCE8F8F844136F6F3AEBB408386C34299"
         }
       },
       {
@@ -33,7 +33,7 @@
         "name": "default",
         "signingConfig": "default",
         "targetSdkVersion": "6.1.0(23)",
-        "compatibleSdkVersion": "6.1.0(23)",
+        "compatibleSdkVersion": "5.0.1(13)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
@@ -46,7 +46,7 @@
         "name": "release",
         "signingConfig": "release",
         "targetSdkVersion": "6.1.0(23)",
-        "compatibleSdkVersion": "6.1.0(23)",
+        "compatibleSdkVersion": "5.0.1(13)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
