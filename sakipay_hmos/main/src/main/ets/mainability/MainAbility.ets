@@ -69,6 +69,12 @@ export default class MainAbility extends UIAbility {
 
   public onForeground(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground')
+    // The widget writes privacy/pause/OT from its own process. Drop the app's
+    // cached Preferences copy so the page's re-read sees the widget's changes
+    // instead of the app's stale values.
+    PreferencesStore.shared().reload().catch((err: Error) => {
+      hilog.error(DOMAIN, 'testTag', 'Foreground preferences reload failed: %{public}s', err.message)
+    })
   }
 
   public onBackground(): void {
@@ -78,8 +84,11 @@ export default class MainAbility extends UIAbility {
 
   private async updateWidgets(): Promise<void> {
     try {
-      const store: PreferencesStore = new PreferencesStore()
+      const store: PreferencesStore = PreferencesStore.shared()
       await store.initialise(this.context)
+      // Read from the persisted file, not this process's cached copy, so the push
+      // reflects any toggle the widget made rather than reverting it.
+      await store.reload()
       const config: ConfigData = await store.loadConfig()
       let amount: string = '0.00'
       let progress: number = 0

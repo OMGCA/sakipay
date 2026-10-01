@@ -9,14 +9,58 @@ const STORE_NAME: string = 'sakipay_config'
  * Wraps @ohos.data.preferences for persistent key-value config storage.
  */
 export class PreferencesStore {
+  private static sharedInstance: PreferencesStore | null = null
   private store: preferences.Preferences | null = null
+  private appContext: Context | null = null
+
+  /**
+   * Process-wide store. The app and the widget already share a single underlying
+   * Preferences file, and keeping every holder in a process on the same instance
+   * means one reload() is seen by all of them.
+   */
+  public static shared(): PreferencesStore {
+    if (PreferencesStore.sharedInstance === null) {
+      PreferencesStore.sharedInstance = new PreferencesStore()
+    }
+    return PreferencesStore.sharedInstance
+  }
 
   public async initialise(context: Context): Promise<void> {
+    this.appContext = context
     try {
       this.store = await preferences.getPreferences(context, STORE_NAME)
       Log.info('PreferencesStore initialised')
     } catch (err) {
       Log.error(`PreferencesStore init failed: ${err}`)
+    }
+  }
+
+  /**
+   * Drops this process's cached copy and re-reads the persisted file.
+   *
+   * The widget (FormExtensionAbility) and the app (UIAbility) run in separate
+   * processes, and each caches its own Preferences instance in memory. A value
+   * flushed by one process is invisible to the other until its cache is dropped,
+   * so any cross-process read must reload first — otherwise the reader returns
+   * its stale copy and the next flush silently persists that over the other
+   * side's change.
+   *
+   * Call this at every point where one side reads state the other may have
+   * written (app foreground, widget update, widget toggle).
+   */
+  public async reload(): Promise<void> {
+    if (this.appContext === null) {
+      return
+    }
+    try {
+      const options: preferences.Options = { name: STORE_NAME }
+      await preferences.removePreferencesFromCache(this.appContext, options)
+      // Hold the old reference until the fresh one is ready rather than nulling it:
+      // an in-flight read (the 5s dashboard refresh) may land in this window and must
+      // not dereference null. The stale instance is only read, never written, here.
+      this.store = await preferences.getPreferences(this.appContext, STORE_NAME)
+    } catch (err) {
+      Log.error(`PreferencesStore reload failed: ${err}`)
     }
   }
 
@@ -287,9 +331,14 @@ export class PreferencesStore {
   }
 
   /**
-   * Ends the current voluntary OT session, adding its elapsed time to accumulated.
+   * Ends the current voluntary OT session, adding its elapsed time to the day's
+   * accumulated seconds and immediately settling that total into the weekly pool at
+   * the given per-second rate.
+   *
+   * The settle lives here rather than at each call site so the weekly figure updates
+   * no matter where OT is ended — the app and the widget both route through this.
    */
-  public async endVoluntaryOTSession(): Promise<void> {
+  public async endVoluntaryOTSession(secondRate: number): Promise<void> {
     const active: boolean = await this.loadVoluntaryOTActive()
     if (!active) { return }
     const sessionStart: number = await this.loadVoluntaryOTSessionStart()
@@ -299,6 +348,7 @@ export class PreferencesStore {
     await this.saveVoluntaryOTAccumulated(accumulated + sessionElapsed)
     await this.saveVoluntaryOTActive(false)
     await this.saveVoluntaryOTSessionStart(0)
+    await this.bankDailyVoluntaryOT(secondRate)
   }
 
   // ---- Weekly Voluntary OT Accumulation ----

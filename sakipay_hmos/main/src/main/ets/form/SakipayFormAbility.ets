@@ -7,7 +7,7 @@ import { HolidayCalendarService } from '../services/HolidayCalendarService'
 import { Log } from '../services/Log'
 
 export default class SakipayFormAbility extends FormExtensionAbility {
-  private store: PreferencesStore = new PreferencesStore()
+  private store: PreferencesStore = PreferencesStore.shared()
 
   public onAddForm(want: Record<string, Object>): formBindingData.FormBindingData {
     Log.info('Widget added')
@@ -32,6 +32,9 @@ export default class SakipayFormAbility extends FormExtensionAbility {
     Log.info(`Widget update: ${formId}`)
     try {
       await this.store.initialise(this.context)
+      // Reload from the persisted file: the app runs in its own process, so its
+      // toggle writes are invisible to this process's cached Preferences copy.
+      await this.store.reload()
       const config: ConfigData = await this.store.loadConfig()
 
       let cardAmount: string = '0.00'
@@ -89,6 +92,9 @@ export default class SakipayFormAbility extends FormExtensionAbility {
 
   private async handlePrivacyToggle(formId: string): Promise<void> {
     try {
+      // Reload first so the flip is based on the persisted value, not a stale
+      // cache that could re-apply an old state.
+      await this.store.reload()
       const current: boolean = await this.store.loadPrivacyMode()
       await this.store.savePrivacyMode(!current)
       await this.onUpdateForm(formId)
@@ -99,9 +105,14 @@ export default class SakipayFormAbility extends FormExtensionAbility {
 
   private async handleVoluntaryOvertimeToggle(formId: string): Promise<void> {
     try {
+      await this.store.reload()
       const current: boolean = await this.store.loadVoluntaryOTActive()
       if (current) {
-        await this.store.endVoluntaryOTSession()
+        // Settle the session into the weekly pool at the same per-second rate the app
+        // uses, derived from the stored config.
+        const config: ConfigData = await this.store.loadConfig()
+        const calc: EarningsCalculator = this.buildCalculator(config)
+        await this.store.endVoluntaryOTSession(calc.secondRate)
       } else {
         await this.store.startVoluntaryOTSession()
       }

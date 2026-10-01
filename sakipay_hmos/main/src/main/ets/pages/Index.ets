@@ -71,6 +71,18 @@ struct Index {
     this.holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
   }
 
+  /**
+   * Fires each time the page comes to the foreground. The widget toggles privacy
+   * and voluntary OT from its own process, so the app must drop its cached
+   * Preferences copy and re-read those flags on re-entry — otherwise it shows
+   * (and later persists) its stale values, flipping the widget's toggle back.
+   */
+  public onPageShow(): void {
+    this.dashboardVM.reloadToggles().catch((err: Error): void => {
+      Log.error(`Foreground toggle reload failed: ${err.message}`)
+    })
+  }
+
   private onShowCalendar(): void {
     this.showCalendar = true
     this.calendarPopupOpacity = 0
@@ -196,7 +208,7 @@ struct Index {
    */
   private async refreshWidgets(ctx: Context): Promise<void> {
     try {
-      const store: PreferencesStore = new PreferencesStore()
+      const store: PreferencesStore = PreferencesStore.shared()
       await store.initialise(ctx)
       const config: ConfigData = await store.loadConfig()
       const isPrivacy: boolean = await store.loadPrivacyMode()
