@@ -2,6 +2,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import WidgetKit
 
 @MainActor
 final class DashboardViewModel: ObservableObject {
@@ -90,6 +91,10 @@ final class DashboardViewModel: ObservableObject {
         isPaused.toggle()
         store.isPaused = isPaused
         refresh()
+        // Refresh the widget immediately so resuming does not leave it showing a stale
+        // (still-accruing) value until the app next backgrounds. Mirrors the HarmonyOS
+        // pause toggle, which pushes to the widget straight away.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Toggles voluntary overtime on/off. When starting, begins a new session counting from now.

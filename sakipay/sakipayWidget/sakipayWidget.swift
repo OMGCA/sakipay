@@ -181,7 +181,14 @@ struct EarningsProvider: TimelineProvider {
         }
 
         if let tomorrow = cal.date(byAdding: .day, value: 1, to: now) {
-            if let nextStart = dateFromMinutes(schedule.workStartMinutes, after: cal.startOfDay(for: tomorrow)) {
+            let tomorrowStart = cal.startOfDay(for: tomorrow)
+            // Day-boundary entry. Without it the widget holds the previous day's last
+            // entry across midnight, so on a rest day it keeps showing the last
+            // workday's pay until the next work-start entry lands (up to ~9am).
+            if tomorrowStart > now {
+                dates.append(tomorrowStart)
+            }
+            if let nextStart = dateFromMinutes(schedule.workStartMinutes, after: tomorrowStart) {
                 dates.append(nextStart)
             }
         }

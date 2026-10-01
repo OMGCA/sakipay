@@ -6,6 +6,8 @@ import { PreferencesStore, ConfigData } from '../services/PreferencesStore'
 import { FormRefresher } from '../services/FormRefresher'
 import { WindowInsets } from '../services/WindowInsets'
 import { EarningsCalculator, BreakScheduleEntry } from '../models/EarningsCalculator'
+import { DayOverride, DayType } from '../models/HolidayCalendar'
+import { HolidayCalendarService } from '../services/HolidayCalendarService'
 
 const DOMAIN: number = 0x0000
 
@@ -97,6 +99,11 @@ export default class MainAbility extends UIAbility {
         calc.schedule.workStartMinutes = config.workStartHour * 60 + config.workStartMinute
         calc.schedule.workEndMinutes = config.workEndHour * 60 + config.workEndMinute
         calc.schedule.breaks = this.parseBreaksForWidget(config.breaksJSON)
+        // The holiday calendar and day overrides decide what counts as a rest day, so the
+        // background push must load them too — otherwise it falls back to the weekend-only
+        // check and a weekday public holiday is pushed to the widget as a working day.
+        this.applyHolidayCalendar(calc)
+        this.applyDayOverrides(calc, config.dayOverridesJSON)
         const today = calc.calculateTodayEarnings(new Date(), totalOTSeconds, isPaused)
         amount = today.amount.toFixed(2)
         progress = today.progress
@@ -144,6 +151,52 @@ export default class MainAbility extends UIAbility {
       return breaks
     } catch (e) {
       return []
+    }
+  }
+
+  private applyHolidayCalendar(calc: EarningsCalculator): void {
+    try {
+      HolidayCalendarService.getInstance().loadBundledCalendars(this.context)
+      calc.holidayCalendar = HolidayCalendarService.getInstance().currentCalendar()
+    } catch (e) {
+      hilog.error(DOMAIN, 'testTag', 'Widget load holiday calendar: %{public}s', JSON.stringify(e))
+    }
+  }
+
+  private applyDayOverrides(calc: EarningsCalculator, dayOverridesJSON: string): void {
+    if (dayOverridesJSON.length === 0) {
+      return
+    }
+    try {
+      const arr: object[] = JSON.parse(dayOverridesJSON) as object[]
+      const overrides: Map<string, DayOverride> = new Map()
+      for (const item of arr) {
+        const obj: Record<string, Object> = item as Record<string, Object>
+        const override: DayOverride = new DayOverride()
+        if (obj.dateString !== undefined) {
+          override.dateString = obj.dateString as string
+        }
+        if (obj.dayType !== undefined) {
+          const dt: string = obj.dayType as string
+          if (dt === DayType.HOLIDAY) {
+            override.dayType = DayType.HOLIDAY
+          } else if (dt === DayType.OVERTIME) {
+            override.dayType = DayType.OVERTIME
+          } else {
+            override.dayType = DayType.NORMAL
+          }
+        }
+        if (obj.overtimeMultiplier !== undefined) {
+          override.overtimeMultiplier = obj.overtimeMultiplier as number
+        }
+        if (obj.customWorkHours !== undefined && obj.customWorkHours !== null) {
+          override.customWorkHours = obj.customWorkHours as number
+        }
+        overrides.set(override.dateString, override)
+      }
+      calc.dayOverrides = overrides
+    } catch (e) {
+      hilog.error(DOMAIN, 'testTag', 'Widget parse day overrides: %{public}s', JSON.stringify(e))
     }
   }
 
