@@ -25,7 +25,7 @@ export class DashboardViewModel {
 
   private calculator: EarningsCalculator = new EarningsCalculator()
   private timerId: number = -1
-  private store: PreferencesStore = new PreferencesStore()
+  private store: PreferencesStore = PreferencesStore.shared()
   private previousStatus: WorkStatus = WorkStatus.NOT_STARTED
 
   /** Callback invoked after privacy toggle — wired to widget refresh in Index. */
@@ -66,14 +66,15 @@ export class DashboardViewModel {
 
   /**
    * Toggles voluntary overtime on/off. When starting, begins a new session counting from now.
-   * When ending, accumulates the current session's elapsed time. Sessions accumulate across
-   * toggles within the same day and reset on the next working day.
+   * When ending, accumulates the current session's elapsed time and settles it into the
+   * weekly pool. Sessions accumulate across toggles within the same day and reset on the
+   * next working day.
    */
   public async toggleVoluntaryOvertime(): Promise<void> {
     if (this.isVoluntaryOvertimeActive) {
-      await this.store.endVoluntaryOTSession()
-      // Bank immediately so the weekly card appears right after ending OT
-      await this.store.bankDailyVoluntaryOT(this.calculator.secondRate)
+      // endVoluntaryOTSession settles the day's total into the weekly pool, so the weekly
+      // card reflects it immediately.
+      await this.store.endVoluntaryOTSession(this.calculator.secondRate)
       this.voluntaryOTWeeklyEarnings = await this.store.loadVoluntaryOTWeeklyEarnings()
     } else {
       await this.store.startVoluntaryOTSession()
@@ -124,36 +125,55 @@ export class DashboardViewModel {
   }
 
   /**
-   * Refreshes earnings data. Re-reads voluntary OT session state from the store
-   * on every call so that widget toggles are picked up by the app.
+   * Refreshes earnings data. Re-reads privacy, pause and voluntary OT state from
+   * the store on every call so that toggles made on the widget are picked up by
+   * the app (the widget writes from its own process).
    */
   public refresh(): void {
-    this.store.loadPauseMode().then((paused: boolean): void => {
-      this.isPaused = paused
-      this.store.loadVoluntaryOTActive().then((isActive: boolean): void => {
-        this.isVoluntaryOvertimeActive = isActive
-        this.store.voluntaryOvertimeTotalSeconds().then((totalOTSeconds: number): void => {
-          const today: TodayEarnings = this.calculator.calculateTodayEarnings(new Date(),
-            totalOTSeconds, paused)
+    this.store.loadPrivacyMode().then((privacy: boolean): void => {
+      this.isPrivacyMode = privacy
+      this.store.loadPauseMode().then((paused: boolean): void => {
+        this.isPaused = paused
+        this.store.loadVoluntaryOTActive().then((isActive: boolean): void => {
+          this.isVoluntaryOvertimeActive = isActive
+          this.store.voluntaryOvertimeTotalSeconds().then((totalOTSeconds: number): void => {
+            const today: TodayEarnings = this.calculator.calculateTodayEarnings(new Date(),
+              totalOTSeconds, paused)
 
-          // Reset voluntary OT accumulation when a new work day begins
-          // (transition from notStarted to working)
-          if (today.status === WorkStatus.WORKING && this.previousStatus === WorkStatus.NOT_STARTED) {
-            this.store.bankDailyVoluntaryOT(this.calculator.secondRate).then((): void => {
-              this.store.loadVoluntaryOTWeeklyEarnings().then((val: number): void => {
-                this.voluntaryOTWeeklyEarnings = val
+            // Reset voluntary OT accumulation when a new work day begins
+            // (transition from notStarted to working)
+            if (today.status === WorkStatus.WORKING && this.previousStatus === WorkStatus.NOT_STARTED) {
+              this.store.bankDailyVoluntaryOT(this.calculator.secondRate).then((): void => {
+                this.store.loadVoluntaryOTWeeklyEarnings().then((val: number): void => {
+                  this.voluntaryOTWeeklyEarnings = val
+                })
               })
-            })
-          }
-          this.previousStatus = today.status
+            }
+            this.previousStatus = today.status
 
-          this.todayAmount = today.amount
-          this.todayProgress = today.progress
-          this.todayStatus = today.status
-          this.monthSummary = this.calculator.calculateMonthSummary(new Date(), paused)
+            this.todayAmount = today.amount
+            this.todayProgress = today.progress
+            this.todayStatus = today.status
+            this.monthSummary = this.calculator.calculateMonthSummary(new Date(), paused)
+          })
         })
       })
     })
+  }
+
+  /**
+   * Re-reads every state the widget can toggle, after dropping the app process's
+   * cached Preferences copy. Called when the app returns to the foreground —
+   * without the reload the app would keep showing its own stale values and the
+   * next flush would revert the widget's change.
+   */
+  public async reloadToggles(): Promise<void> {
+    await this.store.reload()
+    this.isPrivacyMode = await this.store.loadPrivacyMode()
+    this.isPaused = await this.store.loadPauseMode()
+    this.isVoluntaryOvertimeActive = await this.store.loadVoluntaryOTActive()
+    this.voluntaryOTWeeklyEarnings = await this.store.loadVoluntaryOTWeeklyEarnings()
+    this.refresh()
   }
 
   public startTimer(): void {

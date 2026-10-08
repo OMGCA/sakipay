@@ -56,6 +56,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Models/HolidayCalendar.swift,
+				Resources/holidays.json,
 				Services/AppGroupStore.swift,
 				Services/EarningsCalculator.swift,
 				Services/HolidayCalendarService.swift,
@@ -269,7 +270,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = sakipayWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1223415929;
+				CURRENT_PROJECT_VERSION = 1324273997;
 				DEVELOPMENT_TEAM = 5A8W23T7J5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = sakipayWidget/Info.plist;
@@ -300,7 +301,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = sakipayWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1223415929;
+				CURRENT_PROJECT_VERSION = 1324273997;
 				DEVELOPMENT_TEAM = 5A8W23T7J5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = sakipayWidget/Info.plist;
@@ -452,7 +453,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = sakipay/sakipay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1223415929;
+				CURRENT_PROJECT_VERSION = 1324273997;
 				DEVELOPMENT_TEAM = 5A8W23T7J5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -485,7 +486,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = sakipay/sakipay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1223415929;
+				CURRENT_PROJECT_VERSION = 1324273997;
 				DEVELOPMENT_TEAM = 5A8W23T7J5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

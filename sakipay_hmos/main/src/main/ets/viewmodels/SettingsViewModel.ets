@@ -37,7 +37,7 @@ export class SettingsViewModel {
   @Trace public useCalibratedWorkDays: boolean = true
   @Trace public calibratedWorkingDays: number = 0
 
-  private store: PreferencesStore = new PreferencesStore()
+  private store: PreferencesStore = PreferencesStore.shared()
 
   public async initialise(context: Context): Promise<void> {
     await this.store.initialise(context)
