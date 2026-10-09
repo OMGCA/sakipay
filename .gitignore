@@ -17,6 +17,19 @@ DerivedData/
 # Local permissions only. A shared .claude/settings.json would still be tracked.
 .claude/settings.local.json
 
+# ---- Gradle / Kotlin Multiplatform ----
+.gradle/
+.kotlin/
+build/
+captures/
+*.hprof
+
+# ---- Android / IntelliJ ----
+.idea/
+*.iml
+# Points at the local Android SDK; differs per machine.
+local.properties
+
 # ---- HarmonyOS / DevEco ----
 # ohpm regenerates this per machine, so paths and versions differ between macOS
 # and Windows; it churns instead of pinning anything reliably.
@@ -24,8 +37,17 @@ oh-package-lock.json5
 oh_modules/
 .hvigor/
 .cxx/
-local.properties
-.idea/
+.clangd
+.clang-format
+.clang-tidy
 
-# ---- Build output ----
-build/
+# ---- HarmonyOS built artefacts ----
+# libsakipay.so / libsakipay_api.h are produced by the Gradle publish task
+# (invoked automatically by harmonyApp/main/hvigorfile.ts), not checked in.
+harmonyApp/main/libs/
+harmonyApp/main/src/main/cpp/include/libsakipay_api.h
+
+# ---- HarmonyOS local signing credentials ----
+# DevEco-encrypted keystore/cert passwords and absolute ~/.ohos cert paths.
+# Machine-specific, so deliberately untracked; DevEco regenerates it.
+harmonyApp/build-profile.json5

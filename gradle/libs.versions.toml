@@ -1,0 +1,19 @@
+[versions]
+# OpenHarmony-capable Kotlin toolchain, published by the KMP&CMP HarmonyOS
+# community release (based on upstream Kotlin 2.2.21). Resolved from the
+# eazytec Maven repository configured in settings.gradle.kts.
+# If this exact version fails to resolve in your environment, fall back to the
+# version your reference sample uses ("2.2.21-0.3.0-07").
+kotlin = "2.2.21-1.0.0"
+
+# Android Gradle Plugin. 8.x is required because the OpenHarmony Kotlin toolchain
+# is rooted at Kotlin 2.2.21; AGP 9.x pairs with newer Kotlin and will not work.
+agp = "8.11.2"
+android-compileSdk = "36"
+android-minSdk = "24"
+android-targetSdk = "36"
+
+[plugins]
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+androidLibrary = { id = "com.android.library", version.ref = "agp" }

@@ -1,86 +1,155 @@
-# 窝囊计费 / Sakipay
+# Sakipay — Kotlin Multiplatform
 
-<p align="center">
-  <img src="app-icon.png" alt="Sakipay icon" width="128" height="128" />
-</p>
+Sakipay is one Kotlin Multiplatform project: a single shared logic module plus
+three native app projects. Every platform consumes the same implementation, so the
+numbers can't drift.
 
-<p align="center">
-  <strong>每一秒，看见你赚的钱在跳动。<br/>Watch your earnings grow — second by second, in real time.</strong>
-</p>
+| Platform | App project | How it gets the logic |
+|---|---|---|
+| **KMP shared** | `sharedLogic/` | `commonMain` — the authoritative implementation |
+| **iOS** | `iosApp/` | links the `SharedLogic` framework |
+| **HarmonyOS** | `harmonyApp/` | links `libsakipay.so` over NAPI |
+| **Android** | `androidApp/` | direct dependency on `:sharedLogic` |
 
----
+**UI is native on every platform; only behaviour is shared.** The platform apps
+are thin adapters — if you're writing a business rule in Swift or ArkTS, it belongs
+in `commonMain`.
 
-Sakipay is a real-time salary tracker. Configure your monthly pay, work hours, breaks, and tax rate — the app shows exactly how much you've earned today, updated every second. Think of it as a live payslip that ticks up while you work.
+> `sharedUI` (the project wizard's Compose module) is intentionally excluded from
+> the build — UI is native per platform. Its sources are left on disk untouched.
 
-窝囊计费是一个实时工资追踪器。设定月薪、工作时间、休息时段和税率，应用会每秒更新你今天已赚到的钱。就像一张在你工作时不停跳动的活工资单。
+## Source sets
 
----
+| Source set | Contents |
+|---|---|
+| `commonMain` | the whole domain, no platform dependencies |
+| `iosMain` | iOS-specific actuals, if any |
+| `ohosMain` | the `@CName` C-ABI exports consumed by the HarmonyOS NAPI bridge (`OhosExports.kt`) |
+| `androidMain` | (empty — no Android-specific actuals needed yet) |
+| `commonTest` | parity tests — run with `./gradlew :sharedLogic:jvmTest` |
 
-## 功能 / Features
+`commonMain` holds `EarningsCalculator`, `SakipayConfig`, `VoluntaryOvertime`,
+`HolidayCalendarService` (with the holiday data embedded), `MiniJson`, `CivilDate`
+and `SakipayCore`. Persistence stays native (SwiftData + AppGroup on iOS,
+`@ohos.data.preferences` on HarmonyOS, none on Android yet); each platform stores
+the config as a Kotlin-produced JSON document and hands it back for every
+calculation.
 
-- **实时收入计数器 / Real-time earnings counter** — 查看你的时薪、分钟薪乃至秒薪，总收入在工作时间内实时跳动 / see your hourly, minute, and even second rate, with the total ticking up live during work hours
-- **休息时段感知 / Break-aware** — 自定义休息时段，计时器在休息时暂停，就和真正的工资计算一样 / define custom break periods; the counter pauses when you're off the clock
-- **税率可配 / Tax configurable** — 设置税率（0–45%），查看税后实得收入 / set your tax rate to see post-tax take-home earnings
-- **发薪周期追踪 / Payday cycle tracking** — 从上个发薪日向前计数，随时了解你处于发薪周期的哪个阶段 / counts forward from the previous payday so you always know where you are in the pay cycle
-- **月度总览 / Month summary** — 预估月度税前/税后收入、有效时薪和日均收入 / projected monthly pre-tax/post-tax income, effective hourly rate, and average daily earnings
-- **桌面小组件 / Home screen widget** — 无需打开应用，一眼看到今天的收入 / glance at today's earnings without opening the app
-- **浅色 & 深色模式 / Light & dark mode** — 双平台支持 / supported on both platforms
+## Toolchain
 
----
+The `ohosArm64` / `ohosX64` targets come from the **KMP&CMP HarmonyOS** Kotlin
+release — they are **not** in upstream Kotlin. That fixes the version set for the
+whole build:
 
-## 平台 / Platforms
+- Kotlin **2.2.21-1.0.0** (fallback: `2.2.21-0.3.0-07`), resolved from the eazytec
+  Maven repo listed first in `settings.gradle.kts`.
+- AGP **8.11.2**, Gradle **8.14.3**, JDK **17+** (21 recommended).
+  `gradle/gradle-daemon-jvm.properties` pins the daemon to JDK 21 — Gradle 8.14.x
+  cannot run on JDK 25.
+- `compileSdk` **36** / `minSdk` 24 (see `gradle/libs.versions.toml`). Install
+  Android SDK Platform 36 if it is missing.
 
-| 平台 / Platform | 语言 / Language | UI 框架 | 系统要求 / Requirements |
-|---|---|---|---|
-| iOS | Swift | SwiftUI | iOS 18+ |
-| HarmonyOS | ArkTS | ArkUI V2 (API 12+) | SDK 6.1.0(23), 兼容 6.0.0(20) |
+AGP 9.x / Kotlin 2.4.x / Compose 1.12.x (the wizard's defaults) are **not**
+compatible with the OpenHarmony toolchain and have been removed.
 
----
+## Build & run
 
-## 工作原理 / How it works
+```bash
+# Shared logic tests — the fastest check that the logic is correct.
+./gradlew :sharedLogic:jvmTest
 
-应用通过你的月薪逐秒计算收入 / The app calculates a per-second earnings rate from your monthly salary:
-
+# Android
+./gradlew :androidApp:assembleDebug
+# …or open this folder in Android Studio and Run the `androidApp` configuration
 ```
-每秒收入 = 月薪 × (1 − 税率) ÷ 月工作天数 ÷ 日工作小时数 ÷ 3600
-secondRate = monthlyPay × (1 − taxRate) ÷ workingDaysPerMonth ÷ workHoursPerDay ÷ 3600
-```
-
-休息时段会从工作日中扣除，计时器只在真正的工作分钟内跳动。周末（周六和周日）显示为"休息日"。
-
-Break periods are subtracted from the work day so the counter only ticks during actual working minutes. On weekends (Saturday & Sunday) the counter shows "day off".
-
----
-
-## 架构 / Architecture
-
-双平台共享相同的 MVVM 架构和领域模型 / Both platforms share the same MVVM architecture and domain model:
-
-- **`EarningsCalculator`** — 纯计算引擎，月薪、作息、税率 → 收入 / pure calculation engine: salary, schedule, tax → earnings
-- **`DashboardViewModel`** — 实时状态，每 5 秒通过计时器刷新 / live state, refreshes every 5 seconds via timer
-- **`SettingsViewModel`** — 表单状态、持久化与校验 / form state, persistence, and validation
-- **持久化 / Persistence**: SwiftData + App Group UserDefaults (iOS), `@ohos.data.preferences` (HarmonyOS)
-
----
-
-## 构建 & 运行 / Build & Run
 
 ### iOS
 
-- 在 Xcode 中打开 `sakipay/sakipay.xcodeproj` / Open `sakipay/sakipay.xcodeproj` in Xcode
-- Widget 目标: `sakipayWidgetExtension`（`systemSmall` 尺寸）
-- App 目标和 Widget 目标均需在 Signing & Capabilities 中添加 App Group `group.com.xiatstudio.sakipay`
-- 共享源文件（`AppGroupStore.swift`、`EarningsCalculator.swift`）需在 Target Membership 中勾选两个目标
+Open `iosApp/sakipay.xcodeproj` in Xcode and build. A "Compile Kotlin Framework"
+run-script phase on the app and widget targets invokes
+`./gradlew :sharedLogic:embedAndSignAppleFrameworkForXcode` automatically.
+
+```bash
+./gradlew :sharedLogic:linkDebugFrameworkIosSimulatorArm64   # simulator
+./gradlew :sharedLogic:linkDebugFrameworkIosArm64            # device
+```
 
 ### HarmonyOS
 
-- 在 DevEco Studio 中打开 `sakipay_hmos/`，或运行 / Open `sakipay_hmos/` in DevEco Studio, or:
-- `cd sakipay_hmos && hvigorw assembleHap`
+Open `harmonyApp/` in DevEco Studio and build — a hvigor plugin
+(`harmonyApp/main/hvigorfile.ts`) builds and publishes the shared library before
+the native build, so there is no separate step:
 
----
+```bash
+cd harmonyApp
+./deploy.sh                  # build, install, launch (first connected target)
+./deploy.sh 127.0.0.1:5555   # pick a target explicitly
+./deploy.sh --skip-build     # install whatever is already built
+```
 
-## 免责声明 / Disclaimer
+There is no `hvigorw` wrapper checked into `harmonyApp/`; the CLI form needs
+DevEco's own copy plus its SDK and Node. `deploy.sh` sets all of that up.
 
-本应用仅供娱乐及参考，不构成薪资凭证、劳动合同或专业的财务建议。实际收入可能与本应用显示金额存在差异。
+The published library lands in `main/libs/arm64-v8a/libsakipay.so` plus
+`main/src/main/cpp/include/libsakipay_api.h`; `napi_init.cpp` links the former and
+`Index.d.ts` declares the functions ArkTS sees as `import testNapi from 'libentry.so'`.
 
-This app is for entertainment and informational purposes only. It is not a substitute for your actual payslip, employment contract, or professional financial advice. Actual earnings may differ.
+Only **arm64-v8a** is produced (matching `abiFilters`), which covers a physical
+device and an arm64 emulator. For an x86_64 emulator, add `"x86_64"` to
+`abiFilters` and `:sharedLogic:publishDebugBinariesToHarmonyAppX64` to the plugin's
+command.
+
+The plugin skips Gradle entirely when `libsakipay.so` is already newer than the KMP
+sources, so ArkTS-only iterations don't pay Gradle's startup cost. Override with
+`KMP_FORCE_PUBLISH=1` (always rebuild) or `KMP_SKIP_PUBLISH=1` (never). To manage
+the library by hand instead, set `plugins: []` in that hvigorfile and run
+`./gradlew :sharedLogic:publishDebugBinariesToHarmonyApp`.
+
+#### "Push Hap Timeout" / the app never deploys
+
+The symptom is DevEco sitting on a deploy for ten minutes and then reporting:
+
+```
+Push Hap Timeout.: executeRemoteCommand timed out after 600000ms
+```
+
+That message looks like a signing failure but is not one. The HAP is signed
+correctly — `hdc` has simply wedged: `hdc shell` still answers while every file
+transfer hangs forever, so the HAP is never pushed. Rebuilding or regenerating the
+signing config does not help.
+
+Confirm it in one line — this hangs if the channel is wedged:
+
+```bash
+printf hi > /tmp/p.txt
+hdc -t 127.0.0.1:5555 file send /tmp/p.txt /data/local/tmp/p.txt
+```
+
+Recover by restarting the hdc server and re-attaching the emulator's TCP target:
+
+```bash
+hdc kill
+hdc tconn 127.0.0.1:5555
+```
+
+If transfers still hang, cold-boot the emulator from DevEco's Device Manager.
+`deploy.sh` does the probe-and-restart automatically and installs under a timeout,
+so a wedge fails in ~20s instead of 10 minutes. `DEPLOY_REBOOT=1 ./deploy.sh` also
+reboots the target when restarting the server isn't enough.
+
+To check whether a HAP is signed, use the tool rather than eyeballing the file:
+
+```bash
+java -jar /Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/lib/hap-sign-tool.jar \
+  verify-app -inFile main/build/default/outputs/default/main-default-signed.hap \
+  -outCertChain /tmp/c.cer -outProfile /tmp/p.p7b
+```
+
+Look for `verify-app success`.
+
+## Adding logic
+
+Put it in `commonMain` and expose it through `SakipayCore`. iOS and Android call
+the Kotlin API directly; for HarmonyOS add a matching `@CName` export in
+`ohosMain/OhosExports.kt`, a wrapper in `napi_init.cpp` and a declaration in
+`Index.d.ts`. Then run `./gradlew :sharedLogic:jvmTest`.
